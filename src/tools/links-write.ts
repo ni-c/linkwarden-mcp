@@ -16,7 +16,13 @@ import {
   run,
   textResult,
 } from '../result.js';
-import { collectionId, confirmToken, idPath, linkId } from '../schema.js';
+import {
+  collectionId,
+  confirmToken,
+  httpUrl,
+  idPath,
+  linkId,
+} from '../schema.js';
 import { shapeLink, type RawLink } from '../shape.js';
 
 /** Upper bound on how many links one bulk call may touch. */
@@ -104,12 +110,7 @@ export function registerLinkWriteTools(
         'not exist creates it. If the account has "prevent duplicate links" enabled, ' +
         'saving a URL twice fails with HTTP 409.',
       inputSchema: {
-        url: z
-          .string()
-          .trim()
-          .max(2048)
-          .url()
-          .describe('URL to bookmark, including the scheme'),
+        url: httpUrl.describe('URL to bookmark, including the scheme'),
         name: z
           .string()
           .trim()
@@ -178,11 +179,7 @@ export function registerLinkWriteTools(
       inputSchema: {
         link_id: linkId,
         name: z.string().trim().max(2048).optional().describe('New title'),
-        url: z
-          .string()
-          .trim()
-          .max(2048)
-          .url()
+        url: httpUrl
           .optional()
           .describe('New URL — destroys the existing preserved copies'),
         description: z.string().trim().max(2048).optional(),
@@ -439,7 +436,15 @@ export function registerLinkWriteTools(
           },
         });
         assertNotErrorMessage(result, 'Updating the links');
-        return jsonResult({ updated_link_ids: ids, message: result });
+        // Deliberately not the upstream payload: every other tool routes API data
+        // through the allowlist in shape.ts so that a column added by a future
+        // Linkwarden release cannot land in the model context unannounced, and
+        // `PUT /links` answers with a bare status sentence that carries nothing
+        // worth forwarding.
+        return jsonResult({
+          updated_link_ids: ids,
+          updated_count: ids.length,
+        });
       })
   );
 

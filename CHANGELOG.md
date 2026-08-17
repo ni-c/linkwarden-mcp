@@ -33,6 +33,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- URLs handed to Linkwarden must be `http://` or `https://`. Zod's `.url()` only checks
+  that the value parses, so it accepts `javascript:`, `file:`, `data:` and `ftp:` too —
+  and Linkwarden opens whatever it is given in its headless-browser preserver, which
+  `get_link_content` then reads back. Without the scheme check, a model acting on an
+  instruction injected into a preserved page could have bookmarked
+  `file:///etc/passwd` and read the result, entirely through valid tool calls.
+- The access token is removed from the environment before any branch of the
+  configuration parser, not only on the fully-configured path. "URL missing or
+  malformed" is exactly the state in which someone attaches an inspector or trips a
+  crash reporter, and the server keeps running in it.
+- A malformed `LINKWARDEN_URL` is no longer echoed into the log. That branch fires
+  precisely when the variable does not hold what was expected — a token pasted into the
+  wrong variable would otherwise be printed verbatim.
+- Oversized results drop whole items instead of slicing the serialized JSON. Slicing
+  produced a document cut off mid-string and, because `notes` and `next_cursor` are
+  serialized last, discarded the pagination hint first — the one piece of information
+  needed to recover from the truncation.
+- Per-field caps on titles, URLs and descriptions. The count limits bound how many
+  records come back and the total budget bounds the whole result, but neither bounded a
+  single record: one bookmark with a 200 kB description could crowd out everything else.
+- Response bodies are read against an 8 MB ceiling, checked both from `content-length`
+  and while streaming. The result budgets only apply once a body is already in memory.
+- `bulk_update_links` reports ids and a count instead of forwarding Linkwarden's raw
+  response, so it no longer bypasses the output allowlist.
 - Destructive tools require a server-generated, single-use confirmation token bound to
   the exact target, never a boolean argument. Set-valued operations bind the token to a
   sha256 fingerprint of the sorted id set, so a confirmation for `[1, 2]` cannot

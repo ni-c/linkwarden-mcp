@@ -17,6 +17,7 @@ import {
 import {
   collectionId,
   confirmToken,
+  httpUrl,
   idPath,
   rssSubscriptionId,
 } from '../schema.js';
@@ -46,12 +47,7 @@ export function registerRssWriteTools(
           .min(1)
           .max(50)
           .describe('Name for the subscription, unique within the account'),
-        url: z
-          .string()
-          .trim()
-          .max(2048)
-          .url()
-          .describe('Feed URL, including the scheme'),
+        url: httpUrl.describe('Feed URL, including the scheme'),
         collection_id: collectionId
           .optional()
           .describe(

@@ -114,7 +114,74 @@ describe('ConfirmationStore', () => {
 describe('result helpers', () => {
   it('truncates an oversized JSON result and says so', () => {
     const huge = { text: 'x'.repeat(500_000) };
-    expect(resultText(jsonResult(huge))).toMatch(/truncated/);
+    const text = resultText(jsonResult(huge));
+    expect(text).toMatch(/truncated/);
+    // No array to drop items from, so the fallback envelope carries the oversized
+    // document as a string value — still valid JSON, unlike a raw slice.
+    expect(() => JSON.parse(text)).not.toThrow();
+    expect((JSON.parse(text) as { partial_json: string }).partial_json).toMatch(
+      /^\{\n {2}"text": "x+/
+    );
+  });
+
+  it('drops every item when even one of them is oversized', () => {
+    // Halving has to be able to reach zero: a single 300 kB bookmark cannot be
+    // made to fit, and returning a valid empty page beats returning broken JSON.
+    const huge = { links: [{ blob: 'x'.repeat(300_000) }] };
+    const parsed = JSON.parse(resultText(jsonResult(huge))) as {
+      links: unknown[];
+      truncated: { omitted_items: number };
+    };
+    expect(parsed.links).toEqual([]);
+    expect(parsed.truncated.omitted_items).toBe(1);
+  });
+
+  it('stays valid JSON when it truncates', () => {
+    // Slicing the serialized document would hand the model a record cut off
+    // mid-string. Items are dropped instead, so the envelope always parses.
+    const huge = {
+      links: Array.from({ length: 400 }, (_, i) => ({
+        id: i,
+        blob: 'x'.repeat(2000),
+      })),
+    };
+    const text = resultText(jsonResult(huge));
+    expect(() => JSON.parse(text)).not.toThrow();
+    const parsed = JSON.parse(text) as {
+      truncated: { omitted_items: number; follow_up: string };
+      links: unknown[];
+    };
+    expect(parsed.links.length).toBeLessThan(400);
+    expect(parsed.truncated.omitted_items).toBeGreaterThan(0);
+    expect(parsed.truncated.follow_up).toMatch(/next_cursor/);
+  });
+
+  it('keeps the pagination hint that a naive slice would have cut off', () => {
+    // `notes` and `next_cursor` are serialized last by every tool, so they were
+    // the first things a tail-slicing truncation discarded — precisely the
+    // information needed to recover.
+    const huge = {
+      links: Array.from({ length: 400 }, (_, i) => ({
+        id: i,
+        blob: 'x'.repeat(2000),
+      })),
+      next_cursor: 987,
+      notes: ['call search_links again with cursor=987'],
+    };
+    const parsed = JSON.parse(resultText(jsonResult(huge))) as {
+      next_cursor: number;
+      notes: string[];
+    };
+    expect(parsed.next_cursor).toBe(987);
+    expect(parsed.notes[0]).toMatch(/cursor=987/);
+  });
+
+  it('names the follow-up call it was given', () => {
+    const huge = { items: Array.from({ length: 200 }, () => 'x'.repeat(3000)) };
+    const text = resultText(
+      jsonResult(huge, 'call get_link with the id you need')
+    );
+    expect(text).toMatch(/call get_link with the id you need/);
   });
 
   it('truncates oversized untrusted content and keeps the warning first', () => {
@@ -126,6 +193,16 @@ describe('result helpers', () => {
 
   it('passes an object through untrustedResult as JSON', () => {
     expect(resultText(untrustedResult({ a: 1 }))).toMatch(/"a": 1/);
+  });
+
+  it('names a follow-up when untrusted content is truncated', () => {
+    const text = resultText(
+      untrustedResult(
+        'y'.repeat(500_000),
+        'call get_link_content with offset=200000'
+      )
+    );
+    expect(text).toMatch(/call get_link_content with offset=200000/);
   });
 
   it('assertNotErrorMessage throws only for error sentences', () => {

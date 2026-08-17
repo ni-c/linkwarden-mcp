@@ -71,6 +71,49 @@ describe('create_link', () => {
     expect(result.isError).toBe(true);
     expect(calls).toHaveLength(0);
   });
+
+  // Linkwarden opens whatever URL it is given in its headless-browser preserver,
+  // and get_link_content reads the result back. A non-http scheme accepted here
+  // would therefore be a file-disclosure primitive built out of valid tool calls —
+  // and zod's own .url() accepts every one of these.
+  it.each([
+    'javascript:alert(1)',
+    'file:///etc/passwd',
+    'data:text/html,<script>x</script>',
+    'ftp://files.example.net/x',
+  ])('refuses to bookmark %s', async (url) => {
+    const calls = stubFetchRejecting();
+    const client = await connectClient();
+    const result = await client.callTool({
+      name: 'create_link',
+      arguments: { url },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a non-http scheme in update_link and create_rss_subscription too', async () => {
+    const calls = stubFetchRejecting();
+    const client = await connectClient();
+
+    const updated = await client.callTool({
+      name: 'update_link',
+      arguments: { link_id: 1, url: 'file:///etc/shadow' },
+    });
+    const subscribed = await client.callTool({
+      name: 'create_rss_subscription',
+      arguments: {
+        name: 'Feed',
+        url: 'file:///etc/shadow',
+        collection_name: 'Feeds',
+      },
+    });
+
+    expect(updated.isError).toBe(true);
+    expect(subscribed.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe('update_link merges instead of replacing', () => {

@@ -25,8 +25,9 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-# The server reports its version from package.json at runtime.
-COPY package.json package-lock.json ./
+# The server reports its version from package.json at runtime. The lockfile is not
+# copied: nothing installs in this stage, so it would only be dead weight.
+COPY package.json ./
 
 # Ownership proof for the MCP Registry: must match server.json's name exactly.
 LABEL io.modelcontextprotocol.server.name="io.github.ni-c/linkwarden-mcp"

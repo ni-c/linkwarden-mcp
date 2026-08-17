@@ -28,6 +28,40 @@ describe('loadConfig', () => {
     expect(e.LINKWARDEN_TOKEN).toBeUndefined();
   });
 
+  it('deletes the token even when the URL is missing', () => {
+    // The server keeps running in this state (tools stay listable), and it is the
+    // state in which an inspector or a crash reporter is most likely to be pointed
+    // at the process — so the token must already be out of the environment.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const e = env({ LINKWARDEN_TOKEN: 'eySecret' });
+    const config = loadConfig(e);
+    expect(config.token).toBe('eySecret');
+    expect(e.LINKWARDEN_TOKEN).toBeUndefined();
+    spy.mockRestore();
+  });
+
+  it('deletes the token before exiting on a malformed URL, and does not log it', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('exit');
+    }) as never);
+    const e = env({
+      LINKWARDEN_URL: 'not a url',
+      LINKWARDEN_TOKEN: 'eySecret',
+    });
+
+    expect(() => loadConfig(e)).toThrow('exit');
+    expect(e.LINKWARDEN_TOKEN).toBeUndefined();
+    // The rejected value is never echoed — a token pasted into the wrong variable
+    // would otherwise be printed verbatim into the host's log.
+    const logged = spy.mock.calls.flat().join(' ');
+    expect(logged).not.toContain('eySecret');
+    expect(logged).not.toContain('not a url');
+
+    exit.mockRestore();
+    spy.mockRestore();
+  });
+
   it('strips trailing slashes from the base URL', () => {
     const config = loadConfig(
       env({

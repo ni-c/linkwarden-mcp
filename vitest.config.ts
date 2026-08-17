@@ -9,15 +9,15 @@ export default defineConfig({
       // the process; not reachable from unit tests.
       exclude: ['src/index.ts'],
       // Set just below the measured values on 2026-08-17
-      // (98.04 / 87.37 / 98.48 / 98.39), with headroom on functions. Raise these
+      // (98.22 / 88.35 / 98.52 / 98.54), with headroom on functions. Raise these
       // when the measurement rises; answer a drop with tests, never by lowering
       // them. Vitest 4 measures AST-based and stricter than v3, so expect a drop
       // after a major bump and cover it rather than relaxing the gate.
       thresholds: {
-        statements: 96,
-        branches: 84,
+        statements: 97,
+        branches: 86,
         functions: 93,
-        lines: 96,
+        lines: 97,
       },
     },
   },

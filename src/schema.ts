@@ -39,6 +39,34 @@ export const cursor = z
       'instance runs Meilisearch it is either a row offset or the last id seen.'
   );
 
+/**
+ * A URL that Linkwarden may be asked to fetch.
+ *
+ * Zod's own `.url()` only checks that `new URL()` parses the value, so it accepts
+ * `javascript:`, `file:`, `data:` and `ftp:` just as happily as `https:`. That is
+ * not cosmetic here: every URL validated by this schema is handed to Linkwarden,
+ * which opens it in its headless-browser preserver (`create_link`, `update_link`)
+ * or fetches it immediately (`create_rss_subscription`). A model that picked up an
+ * injected instruction out of a preserved page could otherwise have this server
+ * bookmark `file:///etc/passwd`, let the archiver render it, and read the result
+ * back through `get_link_content` — a file-disclosure primitive assembled entirely
+ * out of valid tool calls. Restricting the scheme closes that path at the input.
+ */
+export const httpUrl = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2048)
+  .refine((value) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      return false;
+    }
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  }, 'must be an absolute http:// or https:// URL');
+
 export const confirmToken = z
   .string()
   .min(1)

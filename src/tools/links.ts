@@ -155,12 +155,17 @@ export function registerLinkReadTools(
           );
         }
 
-        return jsonResult({
-          count: links.length,
-          next_cursor: nextCursor,
-          links: links.map(shapeLink),
-          notes: notes.list(),
-        });
+        return jsonResult(
+          {
+            count: links.length,
+            next_cursor: nextCursor,
+            links: links.map(shapeLink),
+            notes: notes.list(),
+          },
+          nextCursor === undefined
+            ? 'Narrow the query with collection_id, tag_id or pinned_only.'
+            : `Call search_links again with cursor=${nextCursor} for the next page.`
+        );
       })
   );
 
@@ -280,20 +285,23 @@ export function registerLinkReadTools(
 
         // Everything below this point was written by whoever controls the saved
         // page, so it goes out through the untrusted wrapper.
-        return untrustedResult({
-          link_id,
-          title: article.title ?? null,
-          byline: article.byline ?? null,
-          site_name: article.siteName ?? null,
-          published_time: article.publishedTime ?? null,
-          language: article.lang ?? null,
-          excerpt: article.excerpt ?? null,
-          total_chars: text.length,
-          offset: start,
-          returned_chars: slice.length,
-          text: slice,
-          notes: notes.list(),
-        });
+        return untrustedResult(
+          {
+            link_id,
+            title: article.title ?? null,
+            byline: article.byline ?? null,
+            site_name: article.siteName ?? null,
+            published_time: article.publishedTime ?? null,
+            language: article.lang ?? null,
+            excerpt: article.excerpt ?? null,
+            total_chars: text.length,
+            offset: start,
+            returned_chars: slice.length,
+            text: slice,
+            notes: notes.list(),
+          },
+          `call get_link_content with link_id=${link_id}, offset=${end} and a smaller max_chars`
+        );
       })
   );
 }

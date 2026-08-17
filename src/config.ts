@@ -45,6 +45,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const insecureTls = env.LINKWARDEN_INSECURE_TLS === 'true';
   const readOnly = env.LINKWARDEN_READ_ONLY === 'true';
 
+  // Don't keep the token in the environment for the process lifetime — it is
+  // visible to child processes and in /proc/<pid>/environ. This happens before any
+  // branch on purpose: the paths below either exit or return early, and "the URL
+  // is missing or malformed" is exactly the state in which someone runs an
+  // inspector or trips a crash reporter, so it is the last moment the token should
+  // still be sitting in the environment.
+  delete env.LINKWARDEN_TOKEN;
+
   const missing = [
     !url && 'LINKWARDEN_URL',
     !token && 'LINKWARDEN_TOKEN',
@@ -73,7 +81,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   try {
     parsed = new URL(url);
   } catch {
-    console.error(`linkwarden-mcp: LINKWARDEN_URL is not a valid URL: ${url}`);
+    // The value itself is not echoed: this branch fires precisely when the
+    // variable does not hold what was expected, and a token pasted into the wrong
+    // environment variable would otherwise be printed verbatim into the MCP host's
+    // log.
+    console.error(
+      'linkwarden-mcp: LINKWARDEN_URL is not a valid URL (e.g. https://links.example.net)'
+    );
     process.exit(1);
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
@@ -100,18 +114,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // otherwise turn the resulting 308 into an opaque failure.
   const normalized = url.replace(/\/+$/, '').replace(/\/api\/v1$/, '');
 
-  const config: Config = {
+  return {
     url: normalized,
     token,
     insecureTls,
     readOnly,
   };
-
-  // Don't keep the token in the environment for the process lifetime — it is
-  // visible to child processes and in /proc/<pid>/environ.
-  delete env.LINKWARDEN_TOKEN;
-
-  return config;
 }
 
 function isLoopbackHost(hostname: string): boolean {

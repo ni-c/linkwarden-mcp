@@ -20,6 +20,70 @@ const REQUEST_TIMEOUT_MS = 30_000;
 /** Every route this server touches lives under this prefix. */
 const API_PREFIX = '/api/v1';
 
+/**
+ * Hard cap on how much of a response body is read into memory.
+ *
+ * The result budgets in `result.ts` only apply once the whole body has already
+ * been buffered, so they do not protect against the body itself. A misconfigured
+ * `LINKWARDEN_URL` pointing at something that streams endlessly, or a reverse
+ * proxy emitting a huge error page, would otherwise grow the process until it is
+ * killed. 8 MB is far above the largest legitimate response — a readability
+ * archive of a long article is a few hundred kB.
+ */
+const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Reads a response body, refusing anything past {@link MAX_RESPONSE_BYTES}.
+ *
+ * `content-length` is checked first because it lets an oversized response be
+ * rejected without transferring it, but it is absent on chunked responses and is
+ * attacker-controlled either way, so the streaming path enforces the limit again.
+ */
+async function readCappedText(response: {
+  headers: { get(name: string): string | null };
+  body: unknown;
+  text(): Promise<string>;
+}): Promise<string> {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
+    throw new Error(
+      `Linkwarden returned ${declared} bytes, more than the ${MAX_RESPONSE_BYTES} byte limit this server will read.`
+    );
+  }
+
+  const body = response.body as AsyncIterable<Uint8Array> | null | undefined;
+  // Test stubs of fetch commonly return a Response-like object without a stream.
+  // Falling back to text() there keeps them working; the content-length check
+  // above still applies.
+  if (
+    !body ||
+    typeof (body as AsyncIterable<Uint8Array>)[Symbol.asyncIterator] !==
+      'function'
+  ) {
+    const text = await response.text();
+    if (text.length > MAX_RESPONSE_BYTES) {
+      throw new Error(
+        `Linkwarden returned more than the ${MAX_RESPONSE_BYTES} byte limit this server will read.`
+      );
+    }
+    return text;
+  }
+
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = '';
+  for await (const chunk of body) {
+    total += chunk.byteLength;
+    if (total > MAX_RESPONSE_BYTES) {
+      throw new Error(
+        `Linkwarden returned more than the ${MAX_RESPONSE_BYTES} byte limit this server will read.`
+      );
+    }
+    text += decoder.decode(chunk, { stream: true });
+  }
+  return text + decoder.decode();
+}
+
 export class LinkwardenApiError extends Error {
   constructor(
     public readonly status: number,
@@ -105,7 +169,7 @@ export class LinkwardenApi {
           dispatcher: this.insecureDispatcher,
         } as UndiciRequestInit)
       : await fetch(url, init);
-    const text = await response.text();
+    const text = await readCappedText(response);
 
     if (!response.ok) {
       throw new LinkwardenApiError(response.status, text, method, path);

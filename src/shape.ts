@@ -101,6 +101,29 @@ function hasFile(path: string | null | undefined): boolean {
   return typeof path === 'string' && path !== '' && path !== UNAVAILABLE;
 }
 
+/**
+ * Per-field caps.
+ *
+ * The count limits on the list tools bound how many records come back, and
+ * {@link jsonResult} bounds the total — but neither bounds a *single* record.
+ * Linkwarden stores titles and descriptions at whatever length the saved page or
+ * another user of the instance supplied, so one bookmark with a 200 kB description
+ * could consume the whole result budget and push everything else out. These caps
+ * are generous enough that no ordinary record is touched.
+ */
+const MAX_NAME_CHARS = 300;
+const MAX_URL_CHARS = 500;
+const MAX_DESCRIPTION_CHARS = 1000;
+
+function clamp(
+  value: string | null | undefined,
+  limit: number,
+  followUp: string
+): string | null | undefined {
+  if (typeof value !== 'string' || value.length <= limit) return value;
+  return `${value.slice(0, limit)}… (truncated at ${limit} characters, ${followUp})`;
+}
+
 export function preservedFormats(link: RawLink): PreservedFormats {
   return {
     screenshot: hasFile(link.image),
@@ -113,7 +136,7 @@ export function preservedFormats(link: RawLink): PreservedFormats {
 export function shapeTag(tag: RawTag) {
   return {
     id: tag.id,
-    name: tag.name,
+    name: clamp(tag.name, MAX_NAME_CHARS, 'call get_tag for the full record'),
     ...(tag._count?.links !== undefined ? { linkCount: tag._count.links } : {}),
     ...(tag.aiGenerated ? { aiGenerated: true } : {}),
     // Per-tag archival overrides. Null means "inherit the account default", which
@@ -132,8 +155,16 @@ export function shapeTag(tag: RawTag) {
 export function shapeCollection(collection: RawCollection) {
   return {
     id: collection.id,
-    name: collection.name,
-    description: collection.description,
+    name: clamp(
+      collection.name,
+      MAX_NAME_CHARS,
+      'call get_collection for the full record'
+    ),
+    description: clamp(
+      collection.description,
+      MAX_DESCRIPTION_CHARS,
+      'call get_collection for the full record'
+    ),
     parentId: collection.parentId ?? null,
     isPublic: collection.isPublic ?? false,
     ownerId: collection.ownerId,
@@ -160,15 +191,28 @@ export function shapeCollection(collection: RawCollection) {
 export function shapeLink(link: RawLink) {
   return {
     id: link.id,
-    name: link.name,
-    url: link.url ?? null,
+    name: clamp(link.name, MAX_NAME_CHARS, 'call get_link for the full record'),
+    url:
+      clamp(link.url, MAX_URL_CHARS, 'call get_link for the full record') ??
+      null,
     type: link.type,
-    description: link.description,
+    description: clamp(
+      link.description,
+      MAX_DESCRIPTION_CHARS,
+      'call get_link for the full record'
+    ),
     collection: {
       id: link.collection?.id ?? link.collectionId,
-      name: link.collection?.name,
+      name: clamp(
+        link.collection?.name,
+        MAX_NAME_CHARS,
+        'call get_collection for the full record'
+      ),
     },
-    tags: (link.tags ?? []).map((tag) => ({ id: tag.id, name: tag.name })),
+    tags: (link.tags ?? []).map((tag) => ({
+      id: tag.id,
+      name: clamp(tag.name, MAX_NAME_CHARS, 'call get_tag for the full record'),
+    })),
     pinned: (link.pinnedBy ?? []).length > 0,
     preserved: preservedFormats(link),
     lastPreserved: link.lastPreserved ?? null,
@@ -181,11 +225,23 @@ export function shapeLink(link: RawLink) {
 export function shapeRssSubscription(subscription: RawRssSubscription) {
   return {
     id: subscription.id,
-    name: subscription.name,
-    url: subscription.url,
+    name: clamp(
+      subscription.name,
+      MAX_NAME_CHARS,
+      'call list_rss_subscriptions for the full record'
+    ),
+    url: clamp(
+      subscription.url,
+      MAX_URL_CHARS,
+      'call list_rss_subscriptions for the full record'
+    ),
     collection: {
       id: subscription.collectionId,
-      name: subscription.collection?.name,
+      name: clamp(
+        subscription.collection?.name,
+        MAX_NAME_CHARS,
+        'call get_collection for the full record'
+      ),
     },
     lastBuildDate: subscription.lastBuildDate ?? null,
     createdAt: subscription.createdAt,

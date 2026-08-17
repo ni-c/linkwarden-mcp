@@ -275,3 +275,128 @@ describe('insecure TLS', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe('a single hostile record cannot fill the result', () => {
+  it('caps the description, title and URL of one link', async () => {
+    // The count limits bound how many records come back and jsonResult bounds the
+    // total, but neither bounds one record: Linkwarden stores whatever the saved
+    // page or another user of the instance supplied.
+    stubFetch(() =>
+      envelopeResponse(
+        linkFixture({
+          name: 'N'.repeat(5_000),
+          description: 'D'.repeat(200_000),
+          url: `https://example.net/${'u'.repeat(5_000)}`,
+        })
+      )
+    );
+    const client = await connectClient();
+    const text = resultText(
+      await client.callTool({ name: 'get_link', arguments: { link_id: 42 } })
+    );
+
+    expect(text.length).toBeLessThan(20_000);
+    expect(text).toMatch(/truncated at 1000 characters/);
+    expect(text).toMatch(/call get_link for the full record/);
+    expect(text).not.toContain('D'.repeat(2_000));
+  });
+});
+
+describe('response size cap', () => {
+  it('refuses a body that declares more than the read limit', async () => {
+    stubFetch(
+      () =>
+        new Response(JSON.stringify({ response: [] }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'content-length': String(64 * 1024 * 1024),
+          },
+        })
+    );
+    const client = await connectClient();
+    const result = await client.callTool({
+      name: 'list_collections',
+      arguments: {},
+    });
+
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toMatch(/byte limit/);
+  });
+
+  it('stops reading a chunked body that runs past the limit', async () => {
+    // No content-length, so the streaming counter is the only thing between an
+    // endlessly streaming upstream and the heap.
+    stubFetch(() => {
+      const chunk = new TextEncoder().encode('x'.repeat(1024 * 1024));
+      let sent = 0;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            sent += 1;
+            if (sent > 64) {
+              controller.close();
+              return;
+            }
+            controller.enqueue(chunk);
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    });
+    const client = await connectClient();
+    const result = await client.callTool({
+      name: 'list_collections',
+      arguments: {},
+    });
+
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toMatch(/byte limit/);
+  });
+});
+
+describe('response bodies without a readable stream', () => {
+  it('falls back to text() for a Response-like stub', async () => {
+    // Not every fetch stub — in tests or in an embedding host — hands back a
+    // Response with a body stream. The cap still has to hold on that path.
+    stubFetch(
+      () =>
+        ({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          body: null,
+          text: () => Promise.resolve(JSON.stringify({ response: [] })),
+        }) as unknown as Response
+    );
+    const client = await connectClient();
+    const result = await client.callTool({
+      name: 'list_collections',
+      arguments: {},
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(resultText(result)).toMatch(/"collections"/);
+  });
+
+  it('still enforces the cap when only text() is available', async () => {
+    stubFetch(
+      () =>
+        ({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          body: null,
+          text: () => Promise.resolve('x'.repeat(9 * 1024 * 1024)),
+        }) as unknown as Response
+    );
+    const client = await connectClient();
+    const result = await client.callTool({
+      name: 'list_collections',
+      arguments: {},
+    });
+
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toMatch(/byte limit/);
+  });
+});
