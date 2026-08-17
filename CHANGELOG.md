@@ -67,5 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content.
 - Error bodies are truncated at 2000 characters and HTML error pages from proxies are
   dropped entirely.
+- The container image deletes the npm and corepack that ship inside `node:24-alpine`.
+  The entrypoint is plain `node`, so neither is used at runtime, and the packages they
+  bundle were the only source of HIGH/CRITICAL findings in the image.
 
 [Unreleased]: https://github.com/ni-c/linkwarden-mcp/compare/main...HEAD
