@@ -188,7 +188,9 @@ describe('update_link merges instead of replacing', () => {
     expect(text).toMatch(/screenshot/);
     expect(text).toMatch(/readable/);
     // The old and new URL are page-controlled text and stay out of the prompt.
-    expect(text).not.toMatch(/example\.net\/moved/);
+    // toContain, not toMatch: this is a plain substring assertion, and writing it
+    // as an unanchored regex made CodeQL read it as a hostname check.
+    expect(text).not.toContain('example.net/moved');
 
     const token = confirmTokenFrom(first);
     const second = await client.callTool({
@@ -336,7 +338,7 @@ describe('delete_link', () => {
 
     const text = resultText(first);
     expect(text).not.toMatch(/ignore previous instructions/i);
-    expect(text).not.toMatch(/evil\.example\.net/);
+    expect(text).not.toContain('evil.example.net');
     expect(text).toMatch(/withheld on purpose/);
   });
 });
