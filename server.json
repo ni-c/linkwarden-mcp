@@ -1,0 +1,83 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ni-c/linkwarden-mcp",
+  "title": "Linkwarden",
+  "description": "MCP server for Linkwarden, the self-hosted bookmark manager with page preservation",
+  "websiteUrl": "https://linkwarden-mcp.ni-c.de",
+  "repository": {
+    "url": "https://github.com/ni-c/linkwarden-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "linkwarden-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "LINKWARDEN_URL",
+          "description": "Base URL of the Linkwarden instance, e.g. https://links.example.net (without /api/v1)",
+          "isRequired": true,
+          "format": "string"
+        },
+        {
+          "name": "LINKWARDEN_TOKEN",
+          "description": "Access token from Settings -> Access Tokens",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "LINKWARDEN_READ_ONLY",
+          "description": "Set to true to register only the 11 read tools and no write tools",
+          "isRequired": false,
+          "format": "boolean"
+        },
+        {
+          "name": "LINKWARDEN_INSECURE_TLS",
+          "description": "Set to true to accept self-signed certificates for this connection only",
+          "isRequired": false,
+          "format": "boolean"
+        }
+      ]
+    },
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/ni-c/linkwarden-mcp:0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "LINKWARDEN_URL",
+          "description": "Base URL of the Linkwarden instance, e.g. https://links.example.net (without /api/v1)",
+          "isRequired": true,
+          "format": "string"
+        },
+        {
+          "name": "LINKWARDEN_TOKEN",
+          "description": "Access token from Settings -> Access Tokens",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "LINKWARDEN_READ_ONLY",
+          "description": "Set to true to register only the 11 read tools and no write tools",
+          "isRequired": false,
+          "format": "boolean"
+        },
+        {
+          "name": "LINKWARDEN_INSECURE_TLS",
+          "description": "Set to true to accept self-signed certificates for this connection only",
+          "isRequired": false,
+          "format": "boolean"
+        }
+      ]
+    }
+  ]
+}

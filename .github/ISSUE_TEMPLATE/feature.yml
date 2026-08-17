@@ -1,0 +1,38 @@
+name: Feature request
+description: A tool or capability the server should have
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation or workflow, not yet the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should the server be able to do?
+    validations:
+      required: true
+  - type: input
+    id: endpoint
+    attributes:
+      label: Linkwarden API endpoint (if you know it)
+      description: >-
+        Linkwarden's published API reference is incomplete; the routes under
+        `apps/web/pages/api/v1/**` in the linkwarden/linkwarden repository are the
+        source of truth. A link to the route makes this much faster.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Deliberately out of scope
+      description: >-
+        Access-token management, user administration, backup export/import,
+        highlights and archive uploads are intentionally not exposed — see the README.
+      options:
+        - label: I have checked that this is not one of the excluded areas

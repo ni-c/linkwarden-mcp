@@ -33,7 +33,22 @@ updates:
         update-types:
           - version-update:semver-major
 
+  # The documentation site has its own manifest and lockfile on purpose: VitePress
+  # must never end up in the root install, which runs in the Docker build and in the
+  # whole test matrix. Excluded from auto-merge — docs.yml is path filtered and so
+  # cannot be a required check.
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      # init and analyze are separate dependencies to Dependabot. Ungrouped, a
+      # v4/v5 mismatch between the two lands as two PRs and kills the codeql job.
+      codeql:
+        patterns:
+          - github/codeql-action*
