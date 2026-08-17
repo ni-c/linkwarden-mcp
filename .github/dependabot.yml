@@ -19,6 +19,16 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # typescript-eslint's peer range gates the TypeScript major: as of 8.67.0 it
+      # declares typescript ">=4.8.4 <6.1.0", so TS 7 cannot be installed here at
+      # all — npm aborts with ERESOLVE. Stated here rather than left as the
+      # "@dependabot ignore this major version" comment on the closed PR #1,
+      # because that lives in GitHub's per-PR state while the reason belongs next
+      # to the constraint. Unignore once that peer range moves.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
 
   # Exists so the digest-pinned base image gets refreshed at all. Node majors are
   # excluded because Dependabot offers whatever tag is newest, while the runtime
@@ -41,6 +51,12 @@ updates:
     directory: /docs
     schedule:
       interval: weekly
+    groups:
+      # One PR for the whole docs toolchain. It is reviewed by hand anyway, so
+      # splitting it just multiplies the clicks.
+      docs:
+        patterns:
+          - '*'
 
   - package-ecosystem: github-actions
     directory: /
