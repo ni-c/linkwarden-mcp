@@ -10,6 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-17
+
+First release published by the automated pipeline, with npm provenance.
+
+### Added
+
+- Multi-arch container image on GHCR (`ghcr.io/ni-c/linkwarden-mcp`) for linux/amd64
+  and linux/arm64, built with an SBOM and build provenance.
+- Documentation site at <https://linkwarden-mcp.ni-c.de>, including a complete tool
+  reference generated from the registered tools — CI fails when the committed
+  reference no longer matches the code.
+- Listed in the official MCP registry as `io.github.ni-c/linkwarden-mcp`.
+- `CONTRIBUTING.md` and issue forms.
+
+## [0.1.0] - 2026-08-17
+
 ### Added
 
 - Initial implementation: 28 tools for Linkwarden, split into 11 read tools that are
@@ -100,4 +116,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The entrypoint is plain `node`, so neither is used at runtime, and the packages they
   bundle were the only source of HIGH/CRITICAL findings in the image.
 
-[Unreleased]: https://github.com/ni-c/linkwarden-mcp/compare/main...HEAD
+[Unreleased]: https://github.com/ni-c/linkwarden-mcp/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/ni-c/linkwarden-mcp/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/ni-c/linkwarden-mcp/releases/tag/v0.1.0
