@@ -1,8 +1,12 @@
 # linkwarden-mcp
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ni-c/linkwarden-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/linkwarden-mcp/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/linkwarden-mcp)](https://www.npmjs.com/package/linkwarden-mcp)
+[![downloads](https://img.shields.io/npm/dm/linkwarden-mcp)](https://www.npmjs.com/package/linkwarden-mcp)
+[![container](https://img.shields.io/badge/ghcr.io-linkwarden--mcp-blue?logo=docker&logoColor=white)](https://github.com/ni-c/linkwarden-mcp/pkgs/container/linkwarden-mcp)
 [![node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)](https://nodejs.org)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![docs](https://img.shields.io/badge/docs-linkwarden--mcp.ni--c.de-4f46e5)](https://linkwarden-mcp.ni-c.de)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for
 [Linkwarden](https://linkwarden.app), the self-hosted bookmark manager that keeps a
@@ -12,6 +16,12 @@ It lets an MCP client — Claude Code, Claude Desktop, Codex — search a bookma
 collection, organise it into collections and tags, and **read the preserved article
 text of a saved page**, so a link that has been archived can be summarised or quoted
 without fetching the live site again.
+
+📖 **[Full documentation at linkwarden-mcp.ni-c.de](https://linkwarden-mcp.ni-c.de)**
+
+![Demo](docs/public/demo.gif)
+
+![Architecture](docs/public/architecture.svg)
 
 > **Note:** Linkwarden's published API reference is incomplete. This server was
 > written against the routes in `apps/web/pages/api/v1/**` and the request schemas in
@@ -197,7 +207,41 @@ npm test
 npm run test:coverage
 npm run lint
 npm run format
+npm run docs:tools     # regenerate docs/reference/tools.md from the registered tools
 ```
+
+`docs/reference/tools.md` is generated; CI fails if the committed copy no longer
+matches the code. The documentation site lives in `docs/` with **its own**
+`package.json` and lockfile — VitePress must not end up in the root install, which runs
+in the Docker build and across the whole test matrix.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Releasing
+
+Everything is driven by a tag; there is no manual publish step.
+
+1. Move the `[Unreleased]` section of [CHANGELOG.md](CHANGELOG.md) to the new version
+   and date it. The release workflow extracts that section with `awk`, so the
+   `## [x.y.z]` heading shape matters.
+2. Bump `version` in `package.json`.
+3. `npm run lint && npm run build && npm run test:coverage`.
+4. Commit, then a **signed annotated** tag:
+
+   ```sh
+   git tag -s v0.1.1 -m "v0.1.1"
+   git push origin main v0.1.1
+   ```
+
+`release.yml` then verifies the tag matches `package.json`, publishes to npm over
+**Trusted Publishing** (OIDC — no npm token exists to leak) with provenance, syncs the
+version into both `server.json` package entries, publishes to the MCP registry, and
+cuts the GitHub release from the changelog section. `ci.yml` pushes the multi-arch
+container image to GHCR in parallel.
+
+If the registry step fails, fix it on `main` and run the `mcp-registry.yml` workflow by
+hand. Re-running the failed job is not an option: it checks out the immutable tag, so a
+fix on `main` could never reach it.
 
 ## License
 
