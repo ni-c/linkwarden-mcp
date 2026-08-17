@@ -33,14 +33,40 @@ const MAX_LINKS = 100;
 const DEFAULT_CONTENT_CHARS = 20_000;
 const MAX_CONTENT_CHARS = 100_000;
 
+/** Field prefixes Linkwarden's query parser understands. */
+const SEARCH_FIELDS = [
+  'url',
+  'name',
+  'description',
+  'type',
+  'collection',
+  'pinned',
+  'public',
+  'before',
+  'after',
+  'tag',
+];
+
+/** Matches a `field:` or `!field:` token anywhere in a query. */
+const FIELD_FILTER_RE = new RegExp(`(^|\\s)!?(${SEARCH_FIELDS.join('|')}):`);
+
 const SEARCH_SYNTAX = [
-  'The query supports field filters, which may be combined and negated:',
+  'Plain text matches the title, URL, description and tag names of a link.',
+  '',
+  'IMPORTANT: the field-filter syntax below only works on instances that run',
+  'Meilisearch. Linkwarden parses those filters exclusively in its Meilisearch',
+  'branch; without it the whole query is matched as one literal substring, so',
+  '`tag:news` searches for the characters "tag:news" and finds nothing. Use the',
+  'collection_id, tag_id and pinned_only arguments instead — those are applied by',
+  'the database and work either way. list_collections and list_tags give you the ids.',
+  '',
+  'Where Meilisearch is available the filters are:',
   '  url:  name:  description:  type:  collection:  tag:  pinned:  public:  before:  after:',
-  'Anything without a field prefix is full-text. Quote values that contain spaces,',
-  'e.g. collection:"Read later". Prefix a filter with ! to negate it, e.g. !tag:archive.',
-  'pinned: and public: take true or false; before: and after: take a date such as 2026-01-31.',
-  'Note: if the instance sets SEARCH_FILTER_LIMIT, field filters beyond that count are',
-  'dropped silently, so prefer few, specific filters.',
+  'Quote values that contain spaces, e.g. collection:"Read later". Prefix a filter',
+  'with ! to negate it, e.g. !tag:archive. pinned: and public: take true or false;',
+  'before: and after: take a date such as 2026-01-31. If the instance sets',
+  'SEARCH_FILTER_LIMIT, field filters beyond that count are dropped silently, so',
+  'prefer few, specific filters.',
 ].join('\n');
 
 export function registerLinkReadTools(
@@ -109,6 +135,23 @@ export function registerLinkReadTools(
         if (nextCursor !== null) {
           notes.add(
             `More links exist: call search_links again with the same arguments and cursor=${nextCursor}.`
+          );
+        }
+        // A field filter that found nothing is the signature of an instance
+        // without Meilisearch: the query was then matched as a literal substring,
+        // so "tag:news" looked for those nine characters. There is no way to ask
+        // the API whether Meilisearch is active, so say it whenever it could apply
+        // rather than let an empty result read as "no such links".
+        if (query !== undefined && FIELD_FILTER_RE.test(query)) {
+          notes.add(
+            links.length === 0
+              ? 'The query uses field filters (field:value) and found nothing. Those only work ' +
+                  'on instances running Meilisearch; otherwise the whole query is matched as a ' +
+                  'literal substring. Retry with plain search terms, or filter structurally via ' +
+                  'the collection_id, tag_id and pinned_only arguments.'
+              : 'The query uses field filters (field:value), which only work on instances ' +
+                  'running Meilisearch. If the result looks wrong, filter via the collection_id, ' +
+                  'tag_id and pinned_only arguments instead.'
           );
         }
 

@@ -534,3 +534,54 @@ describe('gaps in the read paths', () => {
     expect(links[0]?.pinned).toBe(true);
   });
 });
+
+describe('field-filter warning', () => {
+  it('explains the Meilisearch dependency when a field filter finds nothing', async () => {
+    stubFetch(() => dataResponse({ links: [], nextCursor: null }));
+    const client = await connectClient();
+    const result = await client.callTool({
+      name: 'search_links',
+      arguments: { query: 'tag:news' },
+    });
+
+    const notes = (resultJson(result).notes as string[]).join(' ');
+    expect(notes).toMatch(/Meilisearch/);
+    expect(notes).toMatch(/tag_id/);
+  });
+
+  it('still flags the filter syntax when results did come back', async () => {
+    stubFetch(() => dataResponse({ links: [linkFixture()], nextCursor: null }));
+    const client = await connectClient();
+    const result = await client.callTool({
+      name: 'search_links',
+      arguments: { query: '!collection:"Read later" rust' },
+    });
+    expect((resultJson(result).notes as string[]).join(' ')).toMatch(
+      /Meilisearch/
+    );
+  });
+
+  it('does not warn about a plain-text query', async () => {
+    stubFetch(() => dataResponse({ links: [], nextCursor: null }));
+    const client = await connectClient();
+    const result = await client.callTool({
+      name: 'search_links',
+      arguments: { query: 'rust ownership' },
+    });
+    expect((resultJson(result).notes as string[]).join(' ')).not.toMatch(
+      /Meilisearch/
+    );
+  });
+
+  it('does not mistake a colon inside a URL for a field filter', async () => {
+    stubFetch(() => dataResponse({ links: [], nextCursor: null }));
+    const client = await connectClient();
+    const result = await client.callTool({
+      name: 'search_links',
+      arguments: { query: 'https://example.net/a' },
+    });
+    expect((resultJson(result).notes as string[]).join(' ')).not.toMatch(
+      /Meilisearch/
+    );
+  });
+});

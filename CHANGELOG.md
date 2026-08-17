@@ -22,7 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binary or raw markup.
 - `search_links` documents Linkwarden's field-filter syntax (`tag:`, `collection:`,
   `pinned:`, `before:`, `after:`, `!` for negation) in its tool description, and maps
-  readable sort names onto the integer enum the API expects.
+  readable sort names onto the integer enum the API expects. The description states
+  that those filters need Meilisearch, and a query that uses one gets a note saying so
+  — Linkwarden parses field filters only in its Meilisearch branch, and without it the
+  whole query is matched as a single literal substring, so `tag:news` looks for those
+  nine characters and quietly finds nothing. The `collection_id`, `tag_id` and
+  `pinned_only` arguments are applied by the database and work either way.
 - Sort orders and archived formats are exposed as names rather than as the integers
   Linkwarden uses on the wire.
 
