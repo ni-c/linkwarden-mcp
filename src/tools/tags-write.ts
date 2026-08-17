@@ -1,0 +1,248 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+
+import type { LinkwardenApi } from '../api.js';
+import {
+  confirmationPrompt,
+  setResourceKey,
+  type ConfirmationStore,
+} from '../confirm.js';
+import {
+  assertNotErrorMessage,
+  errorResult,
+  jsonResult,
+  run,
+  textResult,
+} from '../result.js';
+import { confirmToken, idPath, tagId } from '../schema.js';
+import { shapeTag, type RawTag } from '../shape.js';
+
+const MAX_TAGS_PER_CALL = 50;
+
+/**
+ * Per-tag archival overrides. Tri-state on purpose: omitting a field leaves it
+ * alone, null means "inherit the account default", true/false force the setting.
+ */
+const archivalFlag = (what: string) =>
+  z
+    .boolean()
+    .nullish()
+    .describe(
+      `${what} for links carrying this tag. null inherits the account default.`
+    );
+
+export function registerTagWriteTools(
+  server: McpServer,
+  api: LinkwardenApi,
+  confirmations: ConfirmationStore
+): void {
+  server.registerTool(
+    'create_tags',
+    {
+      title: 'Create tags or change their archival settings',
+      description:
+        'Creates tags, or updates the ones that already exist — the underlying route ' +
+        'is an upsert keyed on the tag name. This is also the only way to set the ' +
+        'per-tag archival overrides, which decide how links carrying the tag get ' +
+        'preserved.\n\n' +
+        'Note that tags are usually created implicitly by create_link and ' +
+        'update_link; use this tool when the archival settings matter, or to create ' +
+        'a tag before any link uses it.',
+      inputSchema: {
+        names: z
+          .array(z.string().trim().min(1).max(50))
+          .min(1)
+          .max(MAX_TAGS_PER_CALL)
+          .describe(
+            `Tag names, at most ${MAX_TAGS_PER_CALL}. Existing tags are updated rather than duplicated.`
+          ),
+        archive_as_screenshot: archivalFlag('Store a screenshot'),
+        archive_as_pdf: archivalFlag('Store a PDF'),
+        archive_as_readable: archivalFlag(
+          'Store the readable article text (this is what get_link_content reads)'
+        ),
+        archive_as_monolith: archivalFlag('Store a single-file HTML copy'),
+        archive_as_wayback_machine: archivalFlag(
+          'Submit the URL to the Internet Archive'
+        ),
+        ai_tag: archivalFlag('Let the configured AI model assign this tag'),
+      },
+      annotations: { idempotentHint: true },
+    },
+    async ({
+      names,
+      archive_as_screenshot,
+      archive_as_pdf,
+      archive_as_readable,
+      archive_as_monolith,
+      archive_as_wayback_machine,
+      ai_tag,
+    }) =>
+      run(async () => {
+        const settings = {
+          ...(archive_as_screenshot !== undefined
+            ? { archiveAsScreenshot: archive_as_screenshot }
+            : {}),
+          ...(archive_as_pdf !== undefined
+            ? { archiveAsPDF: archive_as_pdf }
+            : {}),
+          ...(archive_as_readable !== undefined
+            ? { archiveAsReadable: archive_as_readable }
+            : {}),
+          ...(archive_as_monolith !== undefined
+            ? { archiveAsMonolith: archive_as_monolith }
+            : {}),
+          ...(archive_as_wayback_machine !== undefined
+            ? { archiveAsWaybackMachine: archive_as_wayback_machine }
+            : {}),
+          ...(ai_tag !== undefined ? { aiTag: ai_tag } : {}),
+        };
+
+        // The upstream schema calls the name "label" here — every other tag route
+        // calls it "name".
+        const result = await api.post('/tags', {
+          tags: [...new Set(names)].map((label) => ({ label, ...settings })),
+        });
+        assertNotErrorMessage(result, 'Creating the tags');
+        const tags = Array.isArray(result) ? (result as RawTag[]) : [];
+        return jsonResult({ tags: tags.map(shapeTag) });
+      })
+  );
+
+  server.registerTool(
+    'rename_tag',
+    {
+      title: 'Rename a tag',
+      description:
+        'Renames a tag; every link carrying it keeps it. Tag names are unique per ' +
+        'account, so renaming a tag to a name that already exists fails — use ' +
+        'merge_tags to fold two tags into one instead.',
+      inputSchema: {
+        tag_id: tagId,
+        name: z.string().trim().min(1).max(50).describe('New tag name'),
+      },
+      annotations: { idempotentHint: true },
+    },
+    async ({ tag_id, name }) =>
+      run(async () => {
+        const updated = await api.put(idPath('/tags', tag_id), { name });
+        assertNotErrorMessage(updated, 'Renaming the tag');
+        return jsonResult({ updated: shapeTag(updated as RawTag) });
+      })
+  );
+
+  server.registerTool(
+    'delete_tags',
+    {
+      title: 'Delete tags',
+      description:
+        'Deletes one or more tags. The links keep existing, they just lose the tag. ' +
+        'Two-step: the first call returns a confirmation token bound to exactly this ' +
+        'set of ids.',
+      inputSchema: {
+        tag_ids: z
+          .array(tagId)
+          .min(1)
+          .max(MAX_TAGS_PER_CALL)
+          .describe(`Tag ids, at most ${MAX_TAGS_PER_CALL}`),
+        confirm_token: confirmToken,
+      },
+      annotations: { destructiveHint: true },
+    },
+    async ({ tag_ids, confirm_token }) =>
+      run(async () => {
+        const ids = [...new Set(tag_ids)];
+        const resource = setResourceKey('delete_tags', ids.map(String));
+
+        if (!confirmations.consume(resource, confirm_token)) {
+          if (confirm_token !== undefined) {
+            return errorResult(
+              'The confirmation token is invalid, expired, or was issued for a ' +
+                'different set of tags. Call delete_tags without a token to get a new one.'
+            );
+          }
+          const token = confirmations.issue(resource);
+          return textResult(
+            confirmationPrompt(
+              `permanently delete ${ids.length} tag(s) (ids ${ids.join(', ')}) and remove them from every link`,
+              token,
+              confirmations.ttlMinutes
+            ) +
+              '\nCall list_tags first if you need to know how many links each one affects.'
+          );
+        }
+
+        const result = await api.delete('/tags', { tagIds: ids });
+        assertNotErrorMessage(result, 'Deleting the tags');
+        return textResult(`Deleted ${ids.length} tag(s): ${ids.join(', ')}.`);
+      })
+  );
+
+  server.registerTool(
+    'merge_tags',
+    {
+      title: 'Merge tags into one',
+      description:
+        'Folds several tags into a single new one: every link that carried any of the ' +
+        'source tags gets the new tag, and the source tags are deleted.\n\n' +
+        'Two things to know before calling this. The new tag is created from scratch, ' +
+        'so the name must not already be in use by this account — merging into an ' +
+        'existing name fails. And the per-tag archival settings of the source tags ' +
+        'are not carried over; set them again with create_tags afterwards if they ' +
+        'mattered.',
+      inputSchema: {
+        tag_ids: z
+          .array(tagId)
+          .min(1)
+          .max(MAX_TAGS_PER_CALL)
+          .describe('Ids of the tags to merge away'),
+        new_name: z
+          .string()
+          .trim()
+          .min(1)
+          .max(50)
+          .describe('Name of the new tag. Must not exist yet.'),
+        confirm_token: confirmToken,
+      },
+      annotations: { destructiveHint: true },
+    },
+    async ({ tag_ids, new_name, confirm_token }) =>
+      run(async () => {
+        const ids = [...new Set(tag_ids)];
+        // The target name is part of the key: a confirmation for merging into one
+        // name must not be replayable with a different one.
+        const resource = setResourceKey(
+          `merge_tags:${new_name}`,
+          ids.map(String)
+        );
+
+        if (!confirmations.consume(resource, confirm_token)) {
+          if (confirm_token !== undefined) {
+            return errorResult(
+              'The confirmation token is invalid, expired, or was issued for a ' +
+                'different set of tags or a different target name. Call merge_tags ' +
+                'without a token to get a new one.'
+            );
+          }
+          const token = confirmations.issue(resource);
+          return textResult(
+            confirmationPrompt(
+              `merge ${ids.length} tag(s) (ids ${ids.join(', ')}) into one new tag, deleting the originals and losing their archival settings`,
+              token,
+              confirmations.ttlMinutes
+            )
+          );
+        }
+
+        const result = await api.put('/tags/merge', {
+          tagIds: ids,
+          newTagName: new_name,
+        });
+        assertNotErrorMessage(result, 'Merging the tags');
+        return jsonResult({
+          merged_tag_ids: ids,
+          new_tag: shapeTag(result as RawTag),
+        });
+      })
+  );
+}

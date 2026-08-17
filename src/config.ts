@@ -1,0 +1,125 @@
+export interface Config {
+  /**
+   * Base URL of the Linkwarden instance, e.g. `https://links.example.net`.
+   * Without the `/api/v1` suffix — the client appends it.
+   * May be undefined together with the token: the server still starts and lists
+   * its tools, every API call then fails with {@link missingConfigMessage}.
+   */
+  url: string | undefined;
+  token: string | undefined;
+  insecureTls: boolean;
+  readOnly: boolean;
+}
+
+/** Shown when the configuration is incomplete — at startup and on every API call. */
+export function missingConfigMessage(missing: string[]): string {
+  return (
+    `missing required environment variable(s): ${missing.join(', ')}\n` +
+    'Required: LINKWARDEN_URL (e.g. https://links.example.net), LINKWARDEN_TOKEN\n' +
+    'Create the token in Linkwarden under Settings → Access Tokens. It carries the ' +
+    'full permissions of the account that created it — Linkwarden has no per-token scopes.\n' +
+    'Optional: LINKWARDEN_READ_ONLY=true to expose only read tools, ' +
+    'LINKWARDEN_INSECURE_TLS=true to accept self-signed certificates'
+  );
+}
+
+/** Names of the required environment variables that are unset in `config`. */
+export function missingConfigKeys(config: Config): string[] {
+  return [
+    !config.url && 'LINKWARDEN_URL',
+    !config.token && 'LINKWARDEN_TOKEN',
+  ].filter((v): v is string => Boolean(v));
+}
+
+/**
+ * Reads the configuration from environment variables.
+ *
+ * Missing credentials are only a warning, not a fatal error: the server must be
+ * able to complete the MCP handshake and answer `tools/list` without them, so
+ * registries and sandbox inspectors can introspect it. A malformed URL still
+ * exits — that one could send the token to the wrong host.
+ */
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const url = env.LINKWARDEN_URL;
+  const token = env.LINKWARDEN_TOKEN;
+  const insecureTls = env.LINKWARDEN_INSECURE_TLS === 'true';
+  const readOnly = env.LINKWARDEN_READ_ONLY === 'true';
+
+  const missing = [
+    !url && 'LINKWARDEN_URL',
+    !token && 'LINKWARDEN_TOKEN',
+  ].filter((v): v is string => Boolean(v));
+
+  if (missing.length > 0) {
+    console.error(`linkwarden-mcp: ${missingConfigMessage(missing)}`);
+  }
+
+  // Linkwarden access tokens are NextAuth JWTs, so they always start with the
+  // base64url of `{"`. A value that does not is usually a copied session cookie
+  // or a password — worth saying before the first 401.
+  if (token && !token.startsWith('ey')) {
+    console.error(
+      'linkwarden-mcp: WARNING: LINKWARDEN_TOKEN does not look like a Linkwarden ' +
+        'access token (those are JWTs and start with "ey"). Create one under ' +
+        'Settings → Access Tokens.'
+    );
+  }
+
+  if (!url) {
+    return { url: undefined, token, insecureTls, readOnly };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    console.error(`linkwarden-mcp: LINKWARDEN_URL is not a valid URL: ${url}`);
+    process.exit(1);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    console.error(
+      `linkwarden-mcp: LINKWARDEN_URL must use http:// or https:// (got ${parsed.protocol})`
+    );
+    process.exit(1);
+  }
+  // Credentials embedded in the URL would end up in logs and error messages.
+  if (parsed.username || parsed.password) {
+    console.error(
+      'linkwarden-mcp: LINKWARDEN_URL must not contain credentials — use LINKWARDEN_TOKEN'
+    );
+    process.exit(1);
+  }
+  if (parsed.protocol === 'http:' && !isLoopbackHost(parsed.hostname)) {
+    console.error(
+      'linkwarden-mcp: WARNING: LINKWARDEN_URL uses plain http to a non-local host — ' +
+        'the API token will be sent unencrypted. Use https:// instead.'
+    );
+  }
+
+  // Tolerate a URL that already carries the API prefix: `redirect: 'error'` would
+  // otherwise turn the resulting 308 into an opaque failure.
+  const normalized = url.replace(/\/+$/, '').replace(/\/api\/v1$/, '');
+
+  const config: Config = {
+    url: normalized,
+    token,
+    insecureTls,
+    readOnly,
+  };
+
+  // Don't keep the token in the environment for the process lifetime — it is
+  // visible to child processes and in /proc/<pid>/environ.
+  delete env.LINKWARDEN_TOKEN;
+
+  return config;
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname.startsWith('127.') ||
+    hostname === '::1' ||
+    hostname === '[::1]'
+  );
+}
