@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- The release workflow extracts the section of the version being tagged with awk,
      matching "## [x.y.z]". Keep that heading shape exactly. -->
 
+<!-- #region changelog -->
+
 ## [0.1.2] - 2026-08-18
 
 ### Fixed
@@ -139,6 +141,9 @@ First release published by the automated pipeline, with npm provenance.
   The entrypoint is plain `node`, so neither is used at runtime, and the packages they
   bundle were the only source of HIGH/CRITICAL findings in the image.
 
-[Unreleased]: https://github.com/ni-c/linkwarden-mcp/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/ni-c/linkwarden-mcp/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/ni-c/linkwarden-mcp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/ni-c/linkwarden-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ni-c/linkwarden-mcp/releases/tag/v0.1.0
+
+<!-- #endregion changelog -->

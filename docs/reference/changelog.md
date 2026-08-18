@@ -1,7 +1,11 @@
 # Changelog
 
-The authoritative changelog lives in the repository:
-[CHANGELOG.md](https://github.com/ni-c/linkwarden-mcp/blob/main/CHANGELOG.md).
+<!-- Included from CHANGELOG.md by name, not by line range: a range silently drops
+     whatever moved out of it, so growing the file's header would quietly delete the
+     newest release from this page while the build stays green. The markers live in
+     CHANGELOG.md as `#region changelog` / `#endregion changelog`, and the Docs
+     workflow asserts that the current version reaches the rendered page. -->
+<!--@include: ../../CHANGELOG.md#changelog-->
 
 Per-release notes, with the same content, are on the
 [releases page](https://github.com/ni-c/linkwarden-mcp/releases).
