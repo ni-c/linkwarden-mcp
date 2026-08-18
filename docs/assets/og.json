@@ -1,0 +1,8 @@
+{
+  "$comment": "Copy for docs/public/og.png, the GitHub social preview and the OpenGraph card. Rendered by scripts/gen-assets.mjs. Tagline and badges are split by hand because the renderer does not wrap text.",
+  "tagline": [
+    "MCP server for Linkwarden — search your bookmarks,",
+    "keep them organised, and read the pages it preserved."
+  ],
+  "badges": ["28 tools", "MIT", "Node ≥22"]
+}
