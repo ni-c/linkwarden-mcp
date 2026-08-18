@@ -19,9 +19,17 @@ without fetching the live site again.
 
 📖 **[Full documentation at linkwarden-mcp.ni-c.de](https://linkwarden-mcp.ni-c.de)**
 
-![Demo](docs/public/demo.gif)
+![Demo](https://linkwarden-mcp.ni-c.de/demo.gif)
 
-![Architecture](docs/public/architecture.svg)
+<!-- <picture> is resolved against the colour scheme of the page showing it, so GitHub
+     picks the variant that matches its own theme toggle. npm strips <picture> and
+     <source> when it sanitises the README and keeps the <img>, which is why that
+     fallback brings its own dark card instead of relying on a media query. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://linkwarden-mcp.ni-c.de/architecture-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://linkwarden-mcp.ni-c.de/architecture-light.svg">
+  <img src="https://linkwarden-mcp.ni-c.de/architecture.svg" alt="An MCP client speaks stdio to linkwarden-mcp, which calls the Linkwarden REST API over HTTPS; Linkwarden stores bookmarks and preserved copies of pages" width="800">
+</picture>
 
 > **Note:** Linkwarden's published API reference is incomplete. This server was
 > written against the routes in `apps/web/pages/api/v1/**` and the request schemas in

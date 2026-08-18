@@ -10,6 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The architecture diagram no longer depends on the reader's operating system.
+  It carried a `prefers-color-scheme` block, which resolves against the OS rather
+  than the theme toggle of GitHub or npm — so dark-mode readers on a light OS got
+  the light artwork on a dark page. The README now uses `<picture>`, which is
+  resolved against the page, and the `<img>` that npm falls back to brings its own
+  card instead of a media query.
+- The README embedded the diagram and the demo GIF with repo-relative paths, which
+  npm does not resolve — neither image appeared on the package page. Both are
+  absolute now.
+
+### Changed
+
+- The diagram is generated from a single source, `docs/assets/architecture.source.svg`,
+  by `npm run assets`. The four rendered copies had already drifted apart; CI now
+  fails if one of them is edited by hand.
+- `docs/public/og.png` is generated at exactly 1280x640, GitHub's recommended size
+  for a social preview, instead of being drawn by hand.
+
 ## [0.1.1] - 2026-08-17
 
 First release published by the automated pipeline, with npm provenance.
