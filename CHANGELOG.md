@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- The release workflow extracts the section of the version being tagged with awk,
      matching "## [x.y.z]". Keep that heading shape exactly. -->
 
-## [Unreleased]
+## [0.1.2] - 2026-08-18
 
 ### Fixed
 
@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fails if one of them is edited by hand.
 - `docs/public/og.png` is generated at exactly 1280x640, GitHub's recommended size
   for a social preview, instead of being drawn by hand.
+- The demo recording is shown on the documentation home page as well, not only in
+  the README, and is pinned to the content column so its width no longer depends on
+  what the vhs tape happened to record.
 
 ## [0.1.1] - 2026-08-17
 
