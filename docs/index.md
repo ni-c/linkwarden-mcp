@@ -75,6 +75,10 @@ features:
 </figure>
 </div>
 
+## See it run
+
+![Terminal recording: the tool count, a search paired with the preserved article text of a saved link, and a first delete_link call answered with a confirmation token instead of a deletion](/demo.gif)
+
 ## In one command
 
 ```sh
