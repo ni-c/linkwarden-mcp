@@ -21,6 +21,7 @@
     "url": "https://github.com/ni-c/linkwarden-mcp/issues"
   },
   "homepage": "https://github.com/ni-c/linkwarden-mcp#readme",
+  "funding": "https://github.com/sponsors/ni-c",
   "type": "module",
   "bin": {
     "linkwarden-mcp": "dist/index.js"
