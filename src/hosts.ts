@@ -177,10 +177,24 @@ export async function firstInternalAddress(
   if (isIP(host) !== 0 || host === '') return null;
 
   for (const address of await resolveQuietly(host)) {
+    // A resolver that sinkholes a name answers 0.0.0.0 or ::, and that is what
+    // every ad blocker and every corporate DNS filter does. It is the resolver
+    // declining to answer, not the name addressing this machine — refusing it
+    // as loopback would misdescribe it and make every blocklisted domain
+    // unbookmarkable. Nothing is fetchable from it either way.
+    if (isUnspecified(address)) continue;
     const kind = internalHostKind(address);
     if (kind !== null) return { address, kind };
   }
   return null;
+}
+
+/** True for `0.0.0.0` and `::`, in any spelling a resolver might return. */
+function isUnspecified(address: string): boolean {
+  const host = bareHost(address);
+  if (isIP(host) === 4) return host.split('.').every((part) => part === '0');
+  const groups = expandIpv6(host);
+  return groups !== null && groups.every((group) => group === 0);
 }
 
 async function resolveQuietly(name: string): Promise<string[]> {

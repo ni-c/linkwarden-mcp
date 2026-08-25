@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- #region changelog -->
 
+## [0.1.4] - 2026-08-26
+
+### Fixed
+
+- A bookmark whose domain a resolver sinkholes is no longer refused. Every ad
+  blocker and DNS filter answers `0.0.0.0` for a blocked name, and `0.0.0.0/8`
+  classifies as loopback — so 0.1.3 turned "your resolver blocks this domain"
+  into "refusing to point Linkwarden at a loopback address", which was both
+  wrong and unhelpful. A resolved unspecified address is now passed over; it
+  addresses nothing and nothing can be fetched from it. `0.0.0.0` written into
+  the URL itself is still refused, because that one does address the host.
+
 ## [0.1.3] - 2026-08-26
 
 ### Security
