@@ -190,6 +190,17 @@ confirmation token.
 - **Confirmation prompts never quote content from Linkwarden.** Titles, URLs,
   descriptions and collection names come from saved pages and from other users of the
   instance; only counts and ids appear in the text a model reads.
+- **Bookmarked URLs are checked before Linkwarden fetches them.** `create_link`,
+  `update_link` and `create_rss_subscription` hand a URL to a server that opens it
+  in a headless browser — and `get_link_content` reads the result back, which makes
+  an unchecked URL a way to read from inside Linkwarden's network. Loopback and
+  link-local addresses, including the cloud metadata endpoints and their hostnames,
+  are refused; addresses are compared numerically, so an IPv4-mapped literal such as
+  `[::ffff:169.254.169.254]` is caught too, and a hostname is resolved before it is
+  accepted. Private LAN addresses stay allowed — bookmarking the router's interface
+  or an intranet page is a normal thing to do with a self-hosted bookmark manager,
+  which also means a container beside Linkwarden is reachable; SECURITY.md says what
+  the check does and does not cover, including the entries inside an RSS feed.
 - **Returned content is marked as untrusted data**, in particular the preserved
   article text, which is written by whoever controls the target site.
 - **Partial updates never clear fields.** Linkwarden's update routes replace the whole

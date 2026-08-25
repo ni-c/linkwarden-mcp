@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+import { firstInternalAddress } from './hosts.js';
+import { ToolInputError } from './result.js';
+
 /**
  * Shared input primitives.
  *
@@ -51,6 +54,11 @@ export const cursor = z
  * bookmark `file:///etc/passwd`, let the archiver render it, and read the result
  * back through `get_link_content` — a file-disclosure primitive assembled entirely
  * out of valid tool calls. Restricting the scheme closes that path at the input.
+ *
+ * The *host* is checked separately, by `assertFetchableUrl` in the tool handlers:
+ * that check resolves names, which a Zod refinement cannot do because it is
+ * synchronous. This schema is the early, cheap half — it gives the model a
+ * useful error before any work happens — and it is not the boundary.
  */
 export const httpUrl = z
   .string()
@@ -137,4 +145,58 @@ export function withQuery(
     if (value !== undefined) query.set(key, String(value));
   }
   return query.size > 0 ? `${path}?${query.toString()}` : path;
+}
+
+/**
+ * Validates a URL Linkwarden will be asked to fetch, and returns the form that
+ * should be sent.
+ *
+ * Every URL that reaches this is retrieved by the *Linkwarden* server:
+ * `create_link` and `update_link` queue the page for the headless-browser
+ * preserver, `create_rss_subscription` fetches the feed immediately.
+ * `get_link_content` then reads the preserved text back out — so an unchecked
+ * URL here is not just a request from inside Linkwarden's network, it is a
+ * request whose response comes back to the caller.
+ *
+ * The returned string is the parsed URL, not the input. Handing on the original
+ * would mean checking one thing and fetching another: the host of
+ * `http://ok.example.com\@127.0.0.1/` is `ok.example.com` to a URL parser and
+ * `127.0.0.1` to a fetcher that splits at the `@`.
+ *
+ * This lives here rather than next to the classifier so that `hosts.ts` stays a
+ * leaf module. `config.ts` needs the classifier, and everything that reports a
+ * tool error needs `result.ts`, which reaches `config.ts` in turn — an import
+ * cycle that works today only because the functions involved happen to be
+ * hoisted.
+ */
+export async function assertFetchableUrl(value: string): Promise<string> {
+  let parsed: URL;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    throw new ToolInputError(`not a valid URL: ${value.slice(0, 200)}`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new ToolInputError(
+      `refusing ${parsed.protocol} — only http:// and https:// can be bookmarked. ` +
+        'Linkwarden opens the URL in its archiver, so a file:// or similar scheme ' +
+        'would have it read from its own disk instead of fetching a page.'
+    );
+  }
+
+  const internal = await firstInternalAddress(parsed.hostname);
+  if (internal !== null) {
+    const where =
+      internal.address === parsed.hostname.toLowerCase()
+        ? internal.address
+        : `${parsed.hostname} (${internal.address})`;
+    throw new ToolInputError(
+      `refusing to point Linkwarden at ${where}: that is a ${internal.kind} ` +
+        'address. Linkwarden fetches the URL itself and this server can read the ' +
+        'preserved page back, so loopback and link-local addresses — the server ' +
+        'itself and its cloud metadata service — are not valid bookmarks. Use a ' +
+        'routable URL.'
+    );
+  }
+  return parsed.toString();
 }

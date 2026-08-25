@@ -17,6 +17,7 @@ import {
   textResult,
 } from '../result.js';
 import {
+  assertFetchableUrl,
   collectionId,
   confirmToken,
   httpUrl,
@@ -86,6 +87,16 @@ function baseUpdateBody(link: RawLink): LinkUpdateBody {
   };
 }
 
+/** The parsed form of a stored URL, or the value itself when it does not parse. */
+function canonical(value: string | null): string | null {
+  if (value === null) return null;
+  try {
+    return new URL(value).toString();
+  } catch {
+    return value;
+  }
+}
+
 function fingerprint(value: unknown): string {
   return createHash('sha256')
     .update(JSON.stringify(value))
@@ -108,7 +119,12 @@ export function registerLinkWriteTools(
         'defaults (get_current_user shows them).\n\nThe collection is optional; ' +
         'without one the link lands in "Unorganized". Naming a collection that does ' +
         'not exist creates it. If the account has "prevent duplicate links" enabled, ' +
-        'saving a URL twice fails with HTTP 409.',
+        'saving a URL twice fails with HTTP 409.\n\n' +
+        'Linkwarden does the fetching, so a URL addressing its own loopback, the ' +
+        'link-local range or a cloud metadata endpoint is refused here. A private ' +
+        'LAN address is accepted by this server, but Linkwarden 2.14 and later ' +
+        'refuse to preserve one themselves — the bookmark is created and stays ' +
+        'without an archive, so get_link_content will have nothing to return.',
       inputSchema: {
         url: httpUrl.describe('URL to bookmark, including the scheme'),
         name: z
@@ -149,9 +165,14 @@ export function registerLinkWriteTools(
               ? { name: collection_name }
               : undefined;
 
+        // What goes on the wire is the parsed URL, not the argument: the point
+        // of the check is that the URL Linkwarden fetches is the one that was
+        // looked at.
+        const target = await assertFetchableUrl(url);
+
         const created = await api.post('/links', {
           type: 'url',
-          url,
+          url: target,
           ...(name !== undefined ? { name } : {}),
           ...(description !== undefined ? { description } : {}),
           ...(collection !== undefined ? { collection } : {}),
@@ -208,7 +229,16 @@ export function registerLinkWriteTools(
         const link = await fetchLink(api, link_id);
         const body = baseUpdateBody(link);
 
-        const urlChanges = url !== undefined && url !== body.url;
+        // Before the confirmation, not after it: a URL that will be refused must
+        // not first be confirmed. Both sides are compared in parsed form, so
+        // re-sending the stored URL spelled differently is not treated as a
+        // change and does not destroy the preserved copies for nothing.
+        const target =
+          url === undefined ? undefined : await assertFetchableUrl(url);
+        const urlChanges =
+          target !== undefined &&
+          target !== body.url &&
+          target !== canonical(body.url);
         if (urlChanges) {
           // Bound to the whole effect, not just the new URL: a confirmation
           // obtained for the URL change must not also carry a collection move or a
@@ -258,7 +288,11 @@ export function registerLinkWriteTools(
         }
 
         if (name !== undefined) body.name = name;
-        if (url !== undefined) body.url = url;
+        // Only when it really changes: Linkwarden compares the old and new URL
+        // with exact string equality and deletes every preserved copy when they
+        // differ, so writing a merely re-spelled URL back would destroy the
+        // archives — and without the confirmation, since urlChanges said no.
+        if (urlChanges) body.url = target;
         if (description !== undefined) body.description = description;
         if (collection_id !== undefined) body.collection.id = collection_id;
         if (tags !== undefined) body.tags = tags.map((n) => ({ name: n }));

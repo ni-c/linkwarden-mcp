@@ -10,6 +10,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- #region changelog -->
 
+## [0.1.3] - 2026-08-26
+
+### Security
+
+- The URLs handed to Linkwarden are now checked against the host they address.
+  `create_link`, `update_link` and `create_rss_subscription` make the _Linkwarden_
+  server fetch a caller-supplied URL — through the headless-browser preserver or,
+  for a feed, immediately — and `get_link_content` reads the preserved text back
+  out. Only the scheme was validated, so `http://169.254.169.254/latest/meta-data/`
+  or a port on the Linkwarden host's own loopback was a perfectly acceptable
+  bookmark, and its response came back to the caller. That is reachable from text
+  inside a page the account has already saved. Loopback and link-local addresses
+  are now refused, together with the metadata service's hostnames
+  (`metadata.google.internal`, `instance-data` and their siblings), which resolve
+  only on the instance itself.
+- Addresses are compared numerically instead of as strings, because `URL`
+  canonicalises an IPv4-mapped IPv6 literal before any check sees it:
+  `http://[::ffff:169.254.169.254]/` arrives as `[::ffff:a9fe:a9fe]` while every
+  dual-stack client dials it as plain `169.254.169.254`. The IPv4-compatible,
+  IPv4-translated and NAT64 spellings are unwrapped the same way, and `localhost.`
+  with its root label is read as `localhost`.
+- What is sent to Linkwarden is the parsed URL rather than the string that came
+  in, so the address that was checked is the one that gets fetched.
+  `http://ok.example.com\@127.0.0.1/feed` has the host `ok.example.com` for a URL
+  parser and `127.0.0.1` for a fetcher that splits at the `@`.
+- A hostname that is not a literal address is resolved and its addresses are
+  checked, so a DNS record pointing at `127.0.0.1` or `169.254.169.254` no longer
+  walks around the guard. A name that cannot be resolved here is still passed on:
+  the Linkwarden server may sit in a different network with its own resolver.
+
+- The metadata endpoints outside `169.254/16` are refused as well:
+  `100.100.100.200` (Alibaba Cloud) and `192.0.0.192` (Oracle's legacy endpoint) sit
+  in carrier-grade NAT and IETF assignment space respectively, so no range check
+  reaches them, but they are the same thing by purpose.
+- The classifier strips an IPv6 scope id before deciding. `net.isIP` accepts
+  `::ffff:127.0.0.1%eth0`, which made the dotted-quad fold miss its anchor and the
+  address come out as routable. A URL can never carry one, but a resolver answer can.
+
+Private LAN addresses (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`) stay allowed
+— bookmarking the router's web interface, a NAS or an intranet page is a normal
+thing to do with a self-hosted bookmark manager. `SECURITY.md` and the security
+guide now state what the check cannot cover, and say it plainly rather than in
+passing: redirects and whatever the headless browser loads from a page, the window
+between this lookup and Linkwarden's own, a name whose resolution is simply stalled
+past the timeout, `represerve_link`, containers sitting next to Linkwarden on a
+compose network — and above all the entries inside an RSS feed, which Linkwarden
+creates and preserves links for without checking their addresses at all before
+version 2.14.
+
+### Changed
+
+- `update_link` compares the new URL with the stored one in parsed form, and writes
+  the parsed form back **only when it really is a change**. Re-sending the same URL
+  spelled differently no longer counts as one, which would have asked for a
+  confirmation and then destroyed every preserved copy for nothing — and because
+  Linkwarden decides that by exact string equality, the re-spelled URL must not be
+  written back either, or the archives would have gone silently.
+- The description of `create_rss_subscription` no longer says that a feed "pointing
+  at a private address is rejected right away" — that described Linkwarden's
+  behaviour, not this server's. It now says which addresses this server refuses, and
+  warns that the check covers the feed URL and not the entries inside it.
+- The description of `create_link` no longer tells the model that a private LAN
+  address "is fine". This server accepts one, but Linkwarden 2.14 and later refuse to
+  preserve it, so the bookmark is created and permanently has no archive to read.
+- The host classifier lives in `src/hosts.ts` as a leaf module with no imports of its
+  own, and the tool-facing check that throws moved to `src/schema.ts`. Having the
+  classifier reach `result.ts` put `config.ts` in an import cycle that held only
+  because the functions in it happen to be hoisted.
+
 ## [0.1.2] - 2026-08-18
 
 ### Fixed

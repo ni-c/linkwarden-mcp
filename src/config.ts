@@ -1,3 +1,5 @@
+import { internalHostKind } from './hosts.js';
+
 export interface Config {
   /**
    * Base URL of the Linkwarden instance, e.g. `https://links.example.net`.
@@ -123,11 +125,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 }
 
 function isLoopbackHost(hostname: string): boolean {
-  return (
-    hostname === 'localhost' ||
-    hostname.endsWith('.localhost') ||
-    hostname.startsWith('127.') ||
-    hostname === '::1' ||
-    hostname === '[::1]'
-  );
+  // The same classifier the SSRF guard uses, so a loopback URL written as
+  // http://[::1]:3000 or http://[::ffff:127.0.0.1]:3000 is recognised here too
+  // and the plain-http warning does not fire on it.
+  return internalHostKind(hostname) === 'loopback';
 }
