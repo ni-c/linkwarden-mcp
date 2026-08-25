@@ -177,6 +177,22 @@ describe('assertFetchableUrl', () => {
     ).resolves.toBe('https://intranet.example/x');
   });
 
+  it('does not read a sinkholed name as loopback', async () => {
+    // Every ad blocker and DNS filter answers 0.0.0.0 for a blocked domain.
+    // That is the resolver declining, not the name addressing this machine, and
+    // refusing it as loopback made blocklisted domains unbookmarkable.
+    lookup.mockResolvedValue([{ address: '0.0.0.0', family: 4 }]);
+    await expect(assertFetchableUrl('https://ads.example.com/x')).resolves.toBe(
+      'https://ads.example.com/x'
+    );
+  });
+
+  it('still refuses 0.0.0.0 written into the URL itself', async () => {
+    await expect(assertFetchableUrl('http://0.0.0.0:8080/x')).rejects.toThrow(
+      /loopback/
+    );
+  });
+
   it('decides a literal without asking the resolver', async () => {
     await expect(assertFetchableUrl('https://1.1.1.1/x')).resolves.toBe(
       'https://1.1.1.1/x'
