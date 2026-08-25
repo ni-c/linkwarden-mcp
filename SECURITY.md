@@ -39,3 +39,65 @@ Destructive operations require a server-generated confirmation token that is bou
 the specific target; a model cannot satisfy that gate on its own. Data returned from
 the upstream API is untrusted input: it is marked as such, and confirmation prompts
 never quote it.
+
+## Bookmarking a URL is a server-side fetch
+
+`create_link`, `update_link` and `create_rss_subscription` hand a URL to **Linkwarden**,
+which opens it in its headless-browser preserver or fetches the feed immediately. The
+request therefore originates inside Linkwarden's network, and `get_link_content` reads
+the preserved text back out — so an unchecked URL is not merely an outbound request, it
+is one whose response returns to the caller. That is reachable from text inside a page
+the account has already saved.
+
+Loopback and link-local addresses are refused, which covers `169.254.169.254` and
+anything on the Linkwarden host's own loopback, together with the metadata service's
+hostnames (`metadata.google.internal`, `instance-data` and their siblings), which
+resolve only on the instance itself. Addresses are classified numerically rather than
+by comparing strings, because `URL` rewrites an IPv4-mapped IPv6 literal before any
+check sees it: `http://[::ffff:169.254.169.254]/` arrives as `[::ffff:a9fe:a9fe]` and a
+dual-stack client dials it as plain `169.254.169.254`. What is sent to Linkwarden is the
+parsed URL rather than the string that came in, so the address that was checked is the
+one fetched — `http://ok.example.com\@127.0.0.1/` has the host `ok.example.com` for a
+URL parser and `127.0.0.1` for a fetcher that splits at the `@`.
+
+Private LAN ranges (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`) stay allowed on
+purpose. Bookmarking the router's web interface, a NAS or an intranet page is a normal
+thing to do with a self-hosted bookmark manager. Be clear about what that permits,
+though: if Linkwarden runs from the project's own `docker-compose.yml`, its `postgres`
+and `meilisearch` containers sit on the same bridge network and answer to their service
+names, so `http://meilisearch:7700/indexes` is a URL this server will accept. Names that
+only resolve inside a network — compose service names, `.internal`, `.svc`,
+`.local` — cannot be recognised from here at all, because they resolve to nothing on
+this machine. If that matters to you, keep Linkwarden's egress restricted where it runs.
+
+Four things this does not cover, and cannot:
+
+- A hostname is resolved here and resolved again by Linkwarden when it fetches. A
+  record that changes in between is outside what any client-side check can see. Worse,
+  a name that does not resolve here within three seconds is passed on rather than
+  refused — the Linkwarden server may sit in a different network with its own resolver,
+  but it also means whoever is authoritative for a name can switch the DNS half off
+  simply by answering slowly. Treat it as a barrier against the easy case.
+- Redirects and anything the headless browser loads from the page it was given are
+  URLs this server never saw.
+- **The entries inside a feed are not the feed URL.** `create_rss_subscription` checks
+  the address of the feed; Linkwarden then creates and preserves a link for every
+  `<item><link>` the feed contains. Before Linkwarden 2.14 those addresses are not
+  checked by anything, so an attacker-controlled feed listing
+  `http://169.254.169.254/latest/meta-data/…` reaches exactly the primitive this guard
+  exists to close, one hop further along. Do not subscribe to feeds you do not trust,
+  and prefer Linkwarden 2.14 or later, which validates them itself.
+- `represerve_link` re-archives a URL Linkwarden already holds. It is not re-checked:
+  the URL either came through this server and was checked then, or it came from
+  Linkwarden itself, where this server has no say. On an instance whose stored links
+  predate this guard, that does mean it can refresh a stale internal read rather than
+  merely re-expose an old one.
+
+Finally, the check itself makes a DNS query from the machine running this server for
+every hostname a caller supplies — before any request reaches Linkwarden. That is a
+small outbound side channel that did not exist before, and it is visible to whoever
+runs the resolver.
+
+Where Linkwarden itself sits on the network is the boundary that actually holds. If it
+runs somewhere that can reach a metadata service or an unauthenticated admin port, put
+that out of its reach there rather than relying on this check.

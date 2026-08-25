@@ -131,7 +131,7 @@ Takes no parameters.
 
 **Create a link** — write
 
-Saves a bookmark. Linkwarden fetches the page title itself when no name is given, and queues the page for preservation according to the account defaults (get_current_user shows them). The collection is optional; without one the link lands in "Unorganized". Naming a collection that does not exist creates it. If the account has "prevent duplicate links" enabled, saving a URL twice fails with HTTP 409.
+Saves a bookmark. Linkwarden fetches the page title itself when no name is given, and queues the page for preservation according to the account defaults (get_current_user shows them). The collection is optional; without one the link lands in "Unorganized". Naming a collection that does not exist creates it. If the account has "prevent duplicate links" enabled, saving a URL twice fails with HTTP 409. Linkwarden does the fetching, so a URL addressing its own loopback, the link-local range or a cloud metadata endpoint is refused here. A private LAN address is accepted by this server, but Linkwarden 2.14 and later refuse to preserve one themselves — the bookmark is created and stays without an archive, so get_link_content will have nothing to return.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -321,7 +321,7 @@ Folds several tags into a single new one: every link that carried any of the sou
 
 **Subscribe to an RSS feed** — write
 
-Subscribes to an RSS or Atom feed. Linkwarden polls it and files every new entry as a link in the given collection, preserving the pages according to the account defaults. Linkwarden fetches the feed once immediately, so a feed that is unreachable or points at a private address is rejected right away. Subscription names must be unique per account, and instances cap the number of subscriptions (20 by default).
+Subscribes to an RSS or Atom feed. Linkwarden polls it and files every new entry as a link in the given collection, preserving the pages according to the account defaults. Linkwarden fetches the feed once immediately, so an unreachable feed fails right away. Because that fetch happens on the Linkwarden server, a URL addressing its own loopback or the link-local range is refused here before the request is made. That check covers the feed URL only — Linkwarden creates and preserves a link for every entry the feed contains, and on versions before 2.14 it does not check those addresses at all. Do not subscribe to a feed you do not trust. Subscription names must be unique per account, and instances cap the number of subscriptions (20 by default).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

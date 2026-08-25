@@ -55,6 +55,61 @@ writing. So:
   `file:` or `data:` — which Zod's own `.url()` does — would have made
   `create_link` plus `get_link_content` into a file-disclosure primitive built entirely
   out of valid tool calls.
+- **And they must not address Linkwarden's own machine.** The scheme check alone left
+  the same primitive intact one level down: `http://169.254.169.254/…` is a perfectly
+  good http URL, and the request comes from inside Linkwarden's network. See
+  [Bookmarking a URL is a server-side fetch](#bookmarking-a-url-is-a-server-side-fetch).
+
+## Bookmarking a URL is a server-side fetch
+
+`create_link`, `update_link` and `create_rss_subscription` hand a URL to **Linkwarden**,
+not to this server. Linkwarden opens it in the preserver or fetches the feed, and
+`get_link_content` reads the preserved text back — so an unchecked URL is a request
+made from inside Linkwarden's network whose response returns to the caller.
+
+Loopback and link-local addresses are refused, which covers the cloud metadata endpoint
+`169.254.169.254`, anything on the Linkwarden host's own loopback, and the metadata
+service's hostnames (`metadata.google.internal`, `instance-data`), which resolve only on
+the instance itself.
+
+Addresses are classified numerically rather than by comparing strings. That matters
+because `URL` rewrites an IPv4-mapped IPv6 literal before any check sees it:
+`http://[::ffff:169.254.169.254]/` arrives as `[::ffff:a9fe:a9fe]`, and a dual-stack
+client dials it as plain `169.254.169.254`. The IPv4-compatible, IPv4-translated and
+NAT64 spellings are unwrapped the same way, and `localhost.` is read as `localhost`.
+
+What is sent on to Linkwarden is the **parsed** URL, not the string that came in — so
+the address that was checked is the address that gets fetched.
+`http://ok.example.com\@127.0.0.1/feed` has the host `ok.example.com` for a URL parser
+and `127.0.0.1` for a fetcher that splits at the `@`; forwarding the input verbatim
+would mean checking one and fetching the other.
+
+Private LAN ranges (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`) stay allowed on
+purpose: bookmarking the router's interface, a NAS or an intranet page is a normal thing
+to do with a self-hosted bookmark manager. Know what that permits — under the project's
+own `docker-compose.yml`, Linkwarden's `postgres` and `meilisearch` containers answer to
+their service names on the same bridge network, so `http://meilisearch:7700/indexes` is
+accepted. Internal-only names in general (compose services, `.internal`, `.svc`,
+`.local`) cannot be recognised here at all: they resolve to nothing on this machine.
+
+**The entries inside a feed are not the feed URL.** `create_rss_subscription` checks the
+address of the feed; Linkwarden then creates and preserves a link for every
+`<item><link>` it contains. Before Linkwarden 2.14 nothing checks those, so a feed you
+do not control reaches this same primitive one hop further along. Subscribe only to
+feeds you trust, and prefer Linkwarden 2.14 or later.
+
+A hostname is also resolved and its addresses checked, so a DNS record pointing at
+`127.0.0.1` does not walk around the guard. What that cannot do: a name this process
+fails to resolve *within three seconds* is passed on rather than refused. That is
+deliberate — Linkwarden may sit in a different network with its own resolver — but it
+also means whoever is authoritative for a name can turn the DNS half off by answering
+slowly, so treat it as a barrier against the easy case rather than a boundary.
+Linkwarden also resolves again when it fetches, and redirects or anything the headless
+browser loads from the page are URLs this server never saw. Where Linkwarden sits on the
+network remains the boundary that holds.
+
+One side effect worth knowing: the check performs a DNS lookup from the machine running
+this server for every hostname a caller supplies, before anything reaches Linkwarden.
 
 ## Output is an allowlist
 

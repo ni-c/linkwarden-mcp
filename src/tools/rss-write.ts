@@ -15,6 +15,7 @@ import {
   textResult,
 } from '../result.js';
 import {
+  assertFetchableUrl,
   collectionId,
   confirmToken,
   httpUrl,
@@ -36,10 +37,14 @@ export function registerRssWriteTools(
         'Subscribes to an RSS or Atom feed. Linkwarden polls it and files every new ' +
         'entry as a link in the given collection, preserving the pages according to ' +
         'the account defaults.\n\n' +
-        'Linkwarden fetches the feed once immediately, so a feed that is unreachable ' +
-        'or points at a private address is rejected right away. Subscription names ' +
-        'must be unique per account, and instances cap the number of subscriptions ' +
-        '(20 by default).',
+        'Linkwarden fetches the feed once immediately, so an unreachable feed fails ' +
+        'right away. Because that fetch happens on the Linkwarden server, a URL ' +
+        'addressing its own loopback or the link-local range is refused here before ' +
+        'the request is made. That check covers the feed URL only — Linkwarden ' +
+        'creates and preserves a link for every entry the feed contains, and on ' +
+        'versions before 2.14 it does not check those addresses at all. Do not ' +
+        'subscribe to a feed you do not trust. Subscription names must be unique ' +
+        'per account, and instances cap the number of subscriptions (20 by default).',
       inputSchema: {
         name: z
           .string()
@@ -71,9 +76,14 @@ export function registerRssWriteTools(
             'Give either collection_id or collection_name, not both.'
           );
         }
+        // Linkwarden fetches the feed immediately, so this is the same
+        // server-side request create_link makes — and what goes on the wire is
+        // the parsed URL, so the address that was checked is the one fetched.
+        const target = await assertFetchableUrl(url);
+
         const created = await api.post('/rss', {
           name,
-          url,
+          url: target,
           ...(collection_id !== undefined
             ? { collectionId: collection_id }
             : {}),
