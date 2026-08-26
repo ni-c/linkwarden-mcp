@@ -1,24 +1,22 @@
 # linkwarden-mcp
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ni-c/linkwarden-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/linkwarden-mcp/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/linkwarden-mcp)](https://www.npmjs.com/package/linkwarden-mcp)
-[![downloads](https://img.shields.io/npm/dm/linkwarden-mcp)](https://www.npmjs.com/package/linkwarden-mcp)
-[![container](https://img.shields.io/badge/ghcr.io-linkwarden--mcp-blue?logo=docker&logoColor=white)](https://github.com/ni-c/linkwarden-mcp/pkgs/container/linkwarden-mcp)
-[![node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)](https://nodejs.org)
-[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![docs](https://img.shields.io/badge/docs-linkwarden--mcp.ni--c.de-4f46e5)](https://linkwarden-mcp.ni-c.de)
+[![npm version](https://img.shields.io/npm/v/linkwarden-mcp)](https://www.npmjs.com/package/linkwarden-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/linkwarden-mcp)](https://www.npmjs.com/package/linkwarden-mcp)
+[![node](https://img.shields.io/node/v/linkwarden-mcp)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/linkwarden-mcp)](LICENSE)
+[![container](https://img.shields.io/badge/ghcr.io-ni--c%2Flinkwarden--mcp-blue)](https://github.com/ni-c/linkwarden-mcp/pkgs/container/linkwarden-mcp)
+[![docs](https://img.shields.io/badge/docs-linkwarden--mcp.ni--c.de-informational)](https://linkwarden-mcp.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server for
+A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
 [Linkwarden](https://linkwarden.app), the self-hosted bookmark manager that keeps a
 permanent copy of every page it saves.
 
-It lets an MCP client — Claude Code, Claude Desktop, Codex — search a bookmark
+Lets MCP clients like Claude Code, Claude Desktop or Codex search a bookmark
 collection, organise it into collections and tags, and **read the preserved article
 text of a saved page**, so a link that has been archived can be summarised or quoted
 without fetching the live site again.
-
-📖 **[Full documentation at linkwarden-mcp.ni-c.de](https://linkwarden-mcp.ni-c.de)**
 
 ![Demo](https://linkwarden-mcp.ni-c.de/demo.gif)
 
