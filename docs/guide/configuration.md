@@ -49,6 +49,65 @@ tool it cannot see, so nothing depends on the model respecting an instruction.
 Worth pairing with a Linkwarden account that only has read access to the collections it
 is shared into, so the restriction holds on both ends.
 
+## Choosing the tools that load
+
+Read-only mode is one cut, along a line this server drew for you.
+`LINKWARDEN_ALLOW_TOOLS` and `LINKWARDEN_DENY_TOOLS` let you draw your own:
+
+```sh
+LINKWARDEN_ALLOW_TOOLS=essential
+LINKWARDEN_ALLOW_TOOLS=search_links,get_link_content,create_link
+LINKWARDEN_DENY_TOOLS=bulk_*
+```
+
+Why bother, when all twenty-eight work: a model chooses the right tool far more
+reliably from a handful than from a long list, and every tool it can see costs context
+on every single request. If this is the only MCP server in a session, twenty-eight is
+fine. If it is one of six, it is not.
+
+**The syntax.** Comma-separated entries. An entry is either an exact tool name or a
+prefix with a trailing `*` — `list_*` matches every tool whose name starts with
+`list_`. Entries are trimmed and case-insensitive, empty ones are ignored, and an empty
+value counts as unset. Nothing else is a pattern: `*_link` and `list_*_x` are rejected
+rather than silently matching nothing.
+
+**`essential`** is a curated preset of eight — save, find, read:
+
+`search_links` · `get_link` · `get_link_content` · `list_collections` · `list_tags` ·
+`create_link` · `update_link` · `delete_link`
+
+`get_link_content` is in it because the preserved article text is the actual reason to
+point a model at Linkwarden. Left out on purpose: `bulk_update_links` and
+`bulk_delete_links`, which are footguns by design; the preservation-queue admin tools;
+RSS subscriptions; and collection and tag CRUD. The preset is marked per tool in the
+[tool reference](/reference/tools), generated from the same constant the filter reads,
+so the two cannot drift.
+
+It composes — `essential,get_dashboard` adds one back, and `LINKWARDEN_DENY_TOOLS`
+takes one away.
+
+**Both together.** `LINKWARDEN_ALLOW_TOOLS` decides what is in;
+`LINKWARDEN_DENY_TOOLS` is then subtracted from the result. With only a deny list,
+everything else stays.
+
+**A name that matches nothing stops the server**, with the offending entry and the list
+of real names. That is deliberate: the alternative is a tool quietly missing from
+`tools/list`, and nobody traces an absence back to an environment variable. The same
+applies to a pattern that matches no tool, which is what catches `delet_*`.
+
+**With read-only mode**, the write tools are not registered at all, so naming one
+explicitly in `LINKWARDEN_ALLOW_TOOLS` is an error that says so — rather than calling a
+tool unknown when it plainly exists. A _pattern_ that covers write tools is fine and
+simply contributes nothing, which is what makes `get_*,create_*` a usable template for
+both kinds of deployment; and `LINKWARDEN_ALLOW_TOOLS=essential` narrows to the read
+half of the preset.
+
+::: tip It is the same cut, not a second one
+A filtered tool is never registered, so it is absent from `tools/list` and unknown to
+`tools/call` alike — exactly what `LINKWARDEN_READ_ONLY` does to a write tool. There is
+no "hidden but callable" state to reason about.
+:::
+
 ## `LINKWARDEN_INSECURE_TLS`
 
 ```sh

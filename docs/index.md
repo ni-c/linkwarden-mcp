@@ -26,8 +26,8 @@ features:
     details: Linkwarden's update routes replace whole records. This server reads the current state and merges, so changing a title never silently strips a link's tags or a collection's collaborators.
   - title: Destructive actions are two-step
     details: Deleting, re-preserving or publishing needs a server-issued confirmation token bound to the exact target. A model cannot satisfy that gate on its own, and a token for one link cannot be replayed for another.
-  - title: Read-only when you want it
-    details: LINKWARDEN_READ_ONLY=true does not register the write tools at all — they are absent from tools/list, not merely refused at call time.
+  - title: You choose what is registered
+    details: LINKWARDEN_READ_ONLY=true does not register the write tools at all — they are absent from tools/list, not merely refused at call time. LINKWARDEN_ALLOW_TOOLS cuts finer still — essential for a curated eight, your own comma-separated list, or a whole family with list_* — while LINKWARDEN_DENY_TOOLS removes individual tools. A name that matches nothing stops the server at startup rather than quietly hiding a tool.
 ---
 
 <div class="diagram">

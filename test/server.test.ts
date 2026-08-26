@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { READ_TOOLS, WRITE_TOOLS } from '../src/tools/catalogue.js';
 import {
   connectClient,
   envelopeResponse,
@@ -9,43 +10,11 @@ import {
 } from './helpers.js';
 
 /**
- * The full tool surface, hard-coded on purpose: a tool that appears or disappears
- * by accident is a change to the server's contract and has to be a deliberate
- * edit here.
+ * The full tool surface is hard-coded in src/tools/catalogue.ts — the tool
+ * filter needs those names before anything is registered, so that file is where
+ * a tool appearing or disappearing has to be a deliberate edit, and these tests
+ * are what keep it honest.
  */
-const READ_TOOLS = [
-  'search_links',
-  'get_link',
-  'get_link_content',
-  'list_collections',
-  'get_collection',
-  'list_tags',
-  'get_tag',
-  'get_current_user',
-  'get_dashboard',
-  'list_rss_subscriptions',
-  'get_worker_stats',
-];
-
-const WRITE_TOOLS = [
-  'create_link',
-  'update_link',
-  'set_link_pinned',
-  'delete_link',
-  'bulk_update_links',
-  'bulk_delete_links',
-  'represerve_link',
-  'delete_link_preservations',
-  'create_collection',
-  'update_collection',
-  'delete_collection',
-  'create_tags',
-  'rename_tag',
-  'delete_tags',
-  'merge_tags',
-  'create_rss_subscription',
-  'delete_rss_subscription',
-];
 
 /** Tools that must carry destructiveHint, because they lose data. */
 const DESTRUCTIVE_TOOLS = [

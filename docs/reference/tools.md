@@ -10,6 +10,11 @@ All 28 tools: 11 read, 17 write.
 With `LINKWARDEN_READ_ONLY=true` the write tools are not registered at all —
 they do not appear in `tools/list`.
 
+All 28 are registered unless you say otherwise. `LINKWARDEN_ALLOW_TOOLS`
+and `LINKWARDEN_DENY_TOOLS` narrow the list to the ones you want, and
+`LINKWARDEN_ALLOW_TOOLS=essential` selects the 8 marked **essential**
+below — see [choosing the tools that load](/guide/configuration#choosing-the-tools-that-load).
+
 Tools marked **write, destructive** need a confirmation token: call them once
 without `confirm_token` to get one, then again with it. The token is bound to the
 exact target and expires after five minutes. See [Security](/guide/security).
@@ -18,7 +23,7 @@ exact target and expires after five minutes. See [Security](/guide/security).
 
 ### `search_links`
 
-**Search and list links** — read-only
+**Search and list links** — read-only, **essential**
 
 Searches bookmarks, or lists them when no query is given. This is the way to find links — there is no separate list tool, and the older /links listing route is deprecated upstream. Plain text matches the title, URL, description and tag names of a link. IMPORTANT: the field-filter syntax below only works on instances that run Meilisearch. Linkwarden parses those filters exclusively in its Meilisearch branch; without it the whole query is matched as one literal substring, so `tag:news` searches for the characters "tag:news" and finds nothing. Use the collection_id, tag_id and pinned_only arguments instead — those are applied by the database and work either way. list_collections and list_tags give you the ids. Where Meilisearch is available the filters are: url: name: description: type: collection: tag: pinned: public: before: after: Quote values that contain spaces, e.g. collection:"Read later". Prefix a filter with ! to negate it, e.g. !tag:archive. pinned: and public: take true or false; before: and after: take a date such as 2026-01-31. If the instance sets SEARCH_FILTER_LIMIT, field filters beyond that count are dropped silently, so prefer few, specific filters. Returns at most 100 links plus a next_cursor for the following page. Article text is not included; use get_link_content for that.
 
@@ -33,7 +38,7 @@ Searches bookmarks, or lists them when no query is given. This is the way to fin
 
 ### `get_link`
 
-**Get a link** — read-only
+**Get a link** — read-only, **essential**
 
 Fetches one bookmark with its tags, collection and which preserved formats exist. Does not include the archived page text — use get_link_content for that.
 
@@ -43,7 +48,7 @@ Fetches one bookmark with its tags, collection and which preserved formats exist
 
 ### `get_link_content`
 
-**Read the preserved text of a link** — read-only
+**Read the preserved text of a link** — read-only, **essential**
 
 Returns the readable article text Linkwarden extracted and stored when it preserved the page, so a saved bookmark can be read without fetching the live site. Only the readable format is served: the screenshot, PDF and single-file HTML archives are binary or raw markup and are not useful as text. Long articles are returned in slices — pass the offset from the previous result to continue. If the link has no readable archive, the tool says so and represerve_link can create one.
 
@@ -55,7 +60,7 @@ Returns the readable article text Linkwarden extracted and stored when it preser
 
 ### `list_collections`
 
-**List collections** — read-only
+**List collections** — read-only, **essential**
 
 Lists every collection the authenticated account owns or is a member of, with its link count. The list is flat: nesting is expressed through parentId, where null means the collection sits at the top level. Linkwarden does not page this route, so all collections come back at once.
 
@@ -73,7 +78,7 @@ Fetches one collection with its link count and the per-member create/update/dele
 
 ### `list_tags`
 
-**List tags** — read-only
+**List tags** — read-only, **essential**
 
 Lists the tags of the authenticated account with the number of links each one is attached to. Tags cut across collections. The per-tag archival settings are included: null there means "inherit the account default", which is not the same as false.
 
@@ -129,7 +134,7 @@ Takes no parameters.
 
 ### `create_link`
 
-**Create a link** — write
+**Create a link** — write, **essential**
 
 Saves a bookmark. Linkwarden fetches the page title itself when no name is given, and queues the page for preservation according to the account defaults (get_current_user shows them). The collection is optional; without one the link lands in "Unorganized". Naming a collection that does not exist creates it. If the account has "prevent duplicate links" enabled, saving a URL twice fails with HTTP 409. Linkwarden does the fetching, so a URL addressing its own loopback, the link-local range or a cloud metadata endpoint is refused here. A private LAN address is accepted by this server, but Linkwarden 2.14 and later refuse to preserve one themselves — the bookmark is created and stays without an archive, so get_link_content will have nothing to return.
 
@@ -144,7 +149,7 @@ Saves a bookmark. Linkwarden fetches the page title itself when no name is given
 
 ### `update_link`
 
-**Update a link** — write
+**Update a link** — write, **essential**
 
 Changes a bookmark. Fields that are not given stay as they are: the tool reads the link first and merges, because the underlying route replaces the whole record and would otherwise clear the title, description and every tag. The tags argument REPLACES the tag list — pass the full set you want. Moving a link to another collection only works for the collection owner. Changing the URL is destructive and needs a confirmation token: Linkwarden deletes every preserved copy of the old page (screenshot, PDF, readable text, single-file HTML) and starts over.
 
@@ -171,7 +176,7 @@ Pins a link to the account's dashboard, or removes the pin. Pins are per account
 
 ### `delete_link`
 
-**Delete a link** — write, destructive
+**Delete a link** — write, destructive, **essential**
 
 Deletes a bookmark and every preserved copy of the page. Two-step: the first call returns a confirmation token, the second call with that token performs the deletion.
 

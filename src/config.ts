@@ -11,6 +11,15 @@ export interface Config {
   token: string | undefined;
   insecureTls: boolean;
   readOnly: boolean;
+  /**
+   * Raw value of `LINKWARDEN_ALLOW_TOOLS` — comma-separated tool names,
+   * `list_*` prefixes, or `essential`. Kept unparsed on purpose: this file is a
+   * mirror of the environment, and the names can only be checked against the
+   * tool catalogue, which `buildToolFilter` does.
+   */
+  allowTools: string | undefined;
+  /** Raw value of `LINKWARDEN_DENY_TOOLS`, same shape, subtracted from the above. */
+  denyTools: string | undefined;
 }
 
 /** Shown when the configuration is incomplete — at startup and on every API call. */
@@ -21,7 +30,9 @@ export function missingConfigMessage(missing: string[]): string {
     'Create the token in Linkwarden under Settings → Access Tokens. It carries the ' +
     'full permissions of the account that created it — Linkwarden has no per-token scopes.\n' +
     'Optional: LINKWARDEN_READ_ONLY=true to expose only read tools, ' +
-    'LINKWARDEN_INSECURE_TLS=true to accept self-signed certificates'
+    'LINKWARDEN_INSECURE_TLS=true to accept self-signed certificates, ' +
+    'LINKWARDEN_ALLOW_TOOLS / LINKWARDEN_DENY_TOOLS to narrow the tool list ' +
+    '(comma-separated names, "list_*" prefixes, or "essential")'
   );
 }
 
@@ -46,6 +57,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const token = env.LINKWARDEN_TOKEN;
   const insecureTls = env.LINKWARDEN_INSECURE_TLS === 'true';
   const readOnly = env.LINKWARDEN_READ_ONLY === 'true';
+  const allowTools = env.LINKWARDEN_ALLOW_TOOLS;
+  const denyTools = env.LINKWARDEN_DENY_TOOLS;
 
   // Don't keep the token in the environment for the process lifetime — it is
   // visible to child processes and in /proc/<pid>/environ. This happens before any
@@ -76,7 +89,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   if (!url) {
-    return { url: undefined, token, insecureTls, readOnly };
+    return {
+      url: undefined,
+      token,
+      insecureTls,
+      readOnly,
+      allowTools,
+      denyTools,
+    };
   }
 
   let parsed: URL;
@@ -121,6 +141,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     token,
     insecureTls,
     readOnly,
+    allowTools,
+    denyTools,
   };
 }
 

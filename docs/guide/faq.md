@@ -89,11 +89,31 @@ Changing the title, description, tags or collection needs no confirmation.
 The same asymmetry applies to `update_collection`: publishing a collection
 (`is_public=true`) needs a confirmation, unpublishing does not.
 
+## One tool I expected is missing
+
+Something narrowed the list. In order of likelihood:
+
+- `LINKWARDEN_READ_ONLY` is set, and it is a write tool. `tools/list` returns 11.
+- `LINKWARDEN_ALLOW_TOOLS` is set and does not name it — it is an allow list, so
+  anything not named is out.
+- `LINKWARDEN_DENY_TOOLS` names it, possibly through a prefix such as `bulk_*`.
+
+A filtered tool is not registered at all, so it is missing from `tools/list` and
+answers `tools/call` with "tool not found" — the same as a write tool under read-only.
+There is no state where it is hidden but still callable.
+
+What it is _not_ is a typo in one of those variables: an entry that matches no tool
+stops the server at startup and says which entry it was. See
+[choosing the tools that load](/guide/configuration#choosing-the-tools-that-load).
+
 ## Can I stop it from writing anything?
 
 `LINKWARDEN_READ_ONLY=true`. The write tools are not registered at all — they never
 appear in `tools/list`. Pair it with an account that only has read access for a
 belt-and-braces setup.
+
+To cut further than "no writes" — say, five tools rather than eleven — add
+`LINKWARDEN_ALLOW_TOOLS`; the two combine.
 
 ## Creating a link created a duplicate collection
 
