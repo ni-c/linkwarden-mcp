@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- #region changelog -->
 
-## [Unreleased]
+## [0.2.0] - 2026-08-27
 
 ### Added
 
@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   The tool reference marks the preset members, generated from the same constant
   the filter reads, so the two cannot drift apart.
+
+### Changed
+
+- The README now carries the same eight badges, in the same order, as every other
+  MCP server in this family, all of them reading from npm rather than hard-coded;
+  the opening follows one shape; and the standalone "Full documentation" line is
+  gone, because the docs badge three lines above it points at the same page.
 
 ### Fixed
 

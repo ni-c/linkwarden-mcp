@@ -1,6 +1,6 @@
 {
   "name": "linkwarden-mcp",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "mcpName": "io.github.ni-c/linkwarden-mcp",
   "description": "MCP server for Linkwarden, the self-hosted bookmark manager with page preservation",
   "keywords": [
