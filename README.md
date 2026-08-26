@@ -18,6 +18,11 @@ collection, organise it into collections and tags, and **read the preserved arti
 text of a saved page**, so a link that has been archived can be summarised or quoted
 without fetching the live site again.
 
+Twenty-eight tools is the ceiling, not the floor: `LINKWARDEN_ALLOW_TOOLS=essential`
+registers a curated eight instead, and a model picks the right tool far more reliably
+from eight than from twenty-eight — see
+[choosing which tools load](#choosing-which-tools-load).
+
 ![Demo](https://linkwarden-mcp.ni-c.de/demo.gif)
 
 <!-- <picture> is resolved against the colour scheme of the page showing it, so GitHub
@@ -49,12 +54,14 @@ collections this server should see rather than handing it an admin token.
 
 ## Configuration
 
-| Variable                  | Required | Description                                                         |
-| ------------------------- | -------- | ------------------------------------------------------------------- |
-| `LINKWARDEN_URL`          | yes      | Base URL, e.g. `https://links.example.net` (without `/api/v1`)      |
-| `LINKWARDEN_TOKEN`        | yes      | Access token from Settings → Access Tokens                          |
-| `LINKWARDEN_READ_ONLY`    | no       | `true` registers only the read tools                                |
-| `LINKWARDEN_INSECURE_TLS` | no       | `true` accepts self-signed certificates (scoped to this connection) |
+| Variable                  | Required | Description                                                                        |
+| ------------------------- | -------- | ---------------------------------------------------------------------------------- |
+| `LINKWARDEN_URL`          | yes      | Base URL, e.g. `https://links.example.net` (without `/api/v1`)                     |
+| `LINKWARDEN_TOKEN`        | yes      | Access token from Settings → Access Tokens                                         |
+| `LINKWARDEN_READ_ONLY`    | no       | `true` registers only the read tools                                               |
+| `LINKWARDEN_ALLOW_TOOLS`  | no       | Comma-separated tool names, `list_*` prefixes, or `essential` for a curated preset |
+| `LINKWARDEN_DENY_TOOLS`   | no       | Same syntax; removed from whatever `LINKWARDEN_ALLOW_TOOLS` left                   |
+| `LINKWARDEN_INSECURE_TLS` | no       | `true` accepts self-signed certificates (scoped to this connection)                |
 
 > **Use `https://`.** Over plain http the token travels unencrypted; the server prints
 > a warning unless the host is local. For a self-signed certificate prefer a proper
@@ -66,6 +73,27 @@ visible to child processes or in `/proc/<pid>/environ`.
 Without credentials the server still starts and lists its tools, so registries and
 inspectors can introspect it; every call then fails with setup instructions instead of
 reaching the API.
+
+### Choosing which tools load
+
+`LINKWARDEN_ALLOW_TOOLS` and `LINKWARDEN_DENY_TOOLS` take comma-separated tool names;
+a trailing `*` matches a whole family. `essential` is a curated preset of eight —
+save, find and read — marked as such in the
+[tool reference](https://linkwarden-mcp.ni-c.de/reference/tools).
+
+```sh
+LINKWARDEN_ALLOW_TOOLS=essential
+LINKWARDEN_ALLOW_TOOLS=search_links,get_link_content,create_link
+LINKWARDEN_DENY_TOOLS=bulk_*
+```
+
+An entry that matches no tool aborts startup and names it, so a typo cannot silently
+hide a tool — an absent tool is not something anyone traces back to an environment
+variable. A filtered tool is never registered, so it is absent from `tools/list` and
+unknown to `tools/call` alike, exactly like a write tool under `LINKWARDEN_READ_ONLY`.
+
+If you run several of these servers at once, [mcp-hub](https://mcp-hub.ni-c.de) is the
+other answer — its `/hub` endpoint replaces every server's tools with six meta-tools.
 
 ## Installation
 

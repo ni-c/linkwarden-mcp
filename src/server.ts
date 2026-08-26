@@ -5,6 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { LinkwardenApi } from './api.js';
 import type { Config } from './config.js';
 import { ConfirmationStore } from './confirm.js';
+import { buildToolFilter, installToolFilter } from './tool-filter.js';
 import { registerCollectionReadTools } from './tools/collections.js';
 import { registerCollectionWriteTools } from './tools/collections-write.js';
 import { registerLinkReadTools } from './tools/links.js';
@@ -25,12 +26,18 @@ function packageVersion(): string {
 }
 
 export function createServer(config: Config): McpServer {
+  // Before anything is built: an unusable tool list should fail on the way in,
+  // not leave a server running with tools quietly missing.
+  const filter = buildToolFilter(config);
+
   const api = new LinkwardenApi(config);
 
   const server = new McpServer({
     name: 'linkwarden-mcp',
     version: packageVersion(),
   });
+
+  installToolFilter(server, filter);
 
   registerLinkReadTools(server, api);
   registerCollectionReadTools(server, api);

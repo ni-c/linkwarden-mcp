@@ -38,6 +38,18 @@
           "format": "boolean"
         },
         {
+          "name": "LINKWARDEN_ALLOW_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to register; 'essential' selects a curated preset (default: all tools)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "LINKWARDEN_DENY_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to remove from whatever LINKWARDEN_ALLOW_TOOLS left",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
           "name": "LINKWARDEN_INSECURE_TLS",
           "description": "Set to true to accept self-signed certificates for this connection only",
           "isRequired": false,
@@ -70,6 +82,18 @@
           "description": "Set to true to register only the 11 read tools and no write tools",
           "isRequired": false,
           "format": "boolean"
+        },
+        {
+          "name": "LINKWARDEN_ALLOW_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to register; 'essential' selects a curated preset (default: all tools)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "LINKWARDEN_DENY_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to remove from whatever LINKWARDEN_ALLOW_TOOLS left",
+          "isRequired": false,
+          "format": "string"
         },
         {
           "name": "LINKWARDEN_INSECURE_TLS",

@@ -12,6 +12,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `LINKWARDEN_ALLOW_TOOLS` and `LINKWARDEN_DENY_TOOLS` choose which of the 28
+  tools are registered. Both take comma-separated tool names or a prefix with a
+  trailing `*` (`bulk_*`), the allow list decides what is in and the deny list is
+  subtracted from it, and `LINKWARDEN_ALLOW_TOOLS=essential` selects a curated
+  eight — `search_links`, `get_link`, `get_link_content`, `list_collections`,
+  `list_tags`, `create_link`, `update_link`, `delete_link`. A model picks the
+  right tool far more reliably from eight than from twenty-eight, and every
+  visible tool costs context on every request. Nothing changes for an
+  installation that sets neither: all 28 are still registered.
+
+  A filtered tool is not registered at all, so it is absent from `tools/list` and
+  answers `tools/call` with "tool not found" — the same cut `LINKWARDEN_READ_ONLY`
+  already makes, not a second, weaker one.
+
+  An entry that matches no tool **stops the server at startup**, naming the entry
+  and listing the real names, rather than being ignored: an ignored typo leaves a
+  tool missing from `tools/list` with nothing pointing at the cause. The same
+  applies to a malformed pattern such as `*_link`. Under `LINKWARDEN_READ_ONLY`,
+  an exact write-tool name in the allow list is refused with a message naming the
+  read-only setting instead of calling the tool unknown, while a pattern covering
+  write tools is accepted and simply contributes nothing.
+
+  The tool reference marks the preset members, generated from the same constant
+  the filter reads, so the two cannot drift apart.
+
 ### Fixed
 
 - The container image no longer ships OpenSSL 3.5.7-r0, which carries

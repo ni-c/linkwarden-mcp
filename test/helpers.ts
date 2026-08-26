@@ -13,6 +13,8 @@ export const config: Config = {
   token: 'eyTestToken',
   insecureTls: false,
   readOnly: false,
+  allowTools: undefined,
+  denyTools: undefined,
 };
 
 export interface FetchCall {
