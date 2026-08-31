@@ -82,9 +82,12 @@ describe('tool surface', () => {
     const tools = (await client.listTools()).tools;
     for (const name of DESTRUCTIVE_TOOLS) {
       const tool = tools.find((t) => t.name === name);
+      // Optional all the way down: if the tool is missing entirely, this has to
+      // fail on the assertion below rather than throw on the property access.
       const properties = (
-        tool?.inputSchema as { properties?: Record<string, unknown> }
-      ).properties;
+        tool?.inputSchema as
+          { properties?: Record<string, unknown> } | undefined
+      )?.properties;
       expect(Object.keys(properties ?? {}), name).toContain('confirm_token');
     }
   });
