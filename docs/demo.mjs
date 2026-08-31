@@ -10,8 +10,8 @@
  * `npm run build`, at least one link, and one link with a readable archive for
  * the second beat.
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { Client } from "@modelcontextprotocol/client";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BEAT = Number(process.env.DEMO_BEAT_MS ?? 1400);

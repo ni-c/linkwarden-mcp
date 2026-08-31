@@ -1,7 +1,5 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { LinkwardenApi } from '../api.js';
 import {
   confirmationPrompt,
   setResourceKey,
@@ -14,6 +12,8 @@ import {
   run,
   textResult,
 } from '../result.js';
+
+import type { LinkwardenApi } from '../api.js';
 import { confirmToken, idPath, tagId } from '../schema.js';
 import { shapeTag, type RawTag } from '../shape.js';
 
@@ -48,7 +48,7 @@ export function registerTagWriteTools(
         'Note that tags are usually created implicitly by create_link and ' +
         'update_link; use this tool when the archival settings matter, or to create ' +
         'a tag before any link uses it.',
-      inputSchema: {
+      inputSchema: z.object({
         names: z
           .array(z.string().trim().min(1).max(50))
           .min(1)
@@ -66,7 +66,7 @@ export function registerTagWriteTools(
           'Submit the URL to the Internet Archive'
         ),
         ai_tag: archivalFlag('Let the configured AI model assign this tag'),
-      },
+      }),
       annotations: { idempotentHint: true },
     },
     async ({
@@ -117,10 +117,10 @@ export function registerTagWriteTools(
         'Renames a tag; every link carrying it keeps it. Tag names are unique per ' +
         'account, so renaming a tag to a name that already exists fails — use ' +
         'merge_tags to fold two tags into one instead.',
-      inputSchema: {
+      inputSchema: z.object({
         tag_id: tagId,
         name: z.string().trim().min(1).max(50).describe('New tag name'),
-      },
+      }),
       annotations: { idempotentHint: true },
     },
     async ({ tag_id, name }) =>
@@ -139,14 +139,14 @@ export function registerTagWriteTools(
         'Deletes one or more tags. The links keep existing, they just lose the tag. ' +
         'Two-step: the first call returns a confirmation token bound to exactly this ' +
         'set of ids.',
-      inputSchema: {
+      inputSchema: z.object({
         tag_ids: z
           .array(tagId)
           .min(1)
           .max(MAX_TAGS_PER_CALL)
           .describe(`Tag ids, at most ${MAX_TAGS_PER_CALL}`),
         confirm_token: confirmToken,
-      },
+      }),
       annotations: { destructiveHint: true },
     },
     async ({ tag_ids, confirm_token }) =>
@@ -190,7 +190,7 @@ export function registerTagWriteTools(
         'existing name fails. And the per-tag archival settings of the source tags ' +
         'are not carried over; set them again with create_tags afterwards if they ' +
         'mattered.',
-      inputSchema: {
+      inputSchema: z.object({
         tag_ids: z
           .array(tagId)
           .min(1)
@@ -203,7 +203,7 @@ export function registerTagWriteTools(
           .max(50)
           .describe('Name of the new tag. Must not exist yet.'),
         confirm_token: confirmToken,
-      },
+      }),
       annotations: { destructiveHint: true },
     },
     async ({ tag_ids, new_name, confirm_token }) =>

@@ -1,13 +1,14 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-import type { LinkwardenApi } from '../api.js';
-import { jsonResult, run } from '../result.js';
-import { collectionId, idPath } from '../schema.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import {
   shapeCollection,
   UNTRUSTED_METADATA_NOTE,
   type RawCollection,
 } from '../shape.js';
+import { z } from 'zod';
+
+import type { LinkwardenApi } from '../api.js';
+import { jsonResult, run } from '../result.js';
+import { collectionId, idPath } from '../schema.js';
 
 export function registerCollectionReadTools(
   server: McpServer,
@@ -22,7 +23,7 @@ export function registerCollectionReadTools(
         'with its link count. The list is flat: nesting is expressed through ' +
         'parentId, where null means the collection sits at the top level. ' +
         'Linkwarden does not page this route, so all collections come back at once.',
-      inputSchema: {},
+      inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
     async () =>
@@ -44,7 +45,7 @@ export function registerCollectionReadTools(
         'Fetches one collection with its link count and the per-member ' +
         'create/update/delete permissions. Use search_links with collection_id to ' +
         'get the links inside it.',
-      inputSchema: { collection_id: collectionId },
+      inputSchema: z.object({ collection_id: collectionId }),
       annotations: { readOnlyHint: true },
     },
     async ({ collection_id }) =>

@@ -1,9 +1,6 @@
 import { createHash } from 'node:crypto';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { LinkwardenApi } from '../api.js';
 import {
   confirmationPrompt,
   setResourceKey,
@@ -24,6 +21,8 @@ import {
   idPath,
   linkId,
 } from '../schema.js';
+
+import type { LinkwardenApi } from '../api.js';
 import { shapeLink, type RawLink } from '../shape.js';
 
 /** Upper bound on how many links one bulk call may touch. */
@@ -125,7 +124,7 @@ export function registerLinkWriteTools(
         'LAN address is accepted by this server, but Linkwarden 2.14 and later ' +
         'refuse to preserve one themselves — the bookmark is created and stays ' +
         'without an archive, so get_link_content will have nothing to return.',
-      inputSchema: {
+      inputSchema: z.object({
         url: httpUrl.describe('URL to bookmark, including the scheme'),
         name: z
           .string()
@@ -148,7 +147,7 @@ export function registerLinkWriteTools(
             'Target collection by name; it is created if it does not exist. Mutually exclusive with collection_id.'
           ),
         tags: tagNames.optional(),
-      },
+      }),
       annotations: {},
     },
     async ({ url, name, description, collection_id, collection_name, tags }) =>
@@ -197,7 +196,7 @@ export function registerLinkWriteTools(
         'Changing the URL is destructive and needs a confirmation token: Linkwarden ' +
         'deletes every preserved copy of the old page (screenshot, PDF, readable ' +
         'text, single-file HTML) and starts over.',
-      inputSchema: {
+      inputSchema: z.object({
         link_id: linkId,
         name: z.string().trim().max(2048).optional().describe('New title'),
         url: httpUrl
@@ -213,7 +212,7 @@ export function registerLinkWriteTools(
             'Replacement tag list. Omit to keep the current tags, pass [] to remove all of them.'
           ),
         confirm_token: confirmToken,
-      },
+      }),
       annotations: { idempotentHint: true },
     },
     async ({
@@ -311,10 +310,10 @@ export function registerLinkWriteTools(
         "Pins a link to the account's dashboard, or removes the pin. Pins are per " +
         'account, so this only affects the account the token belongs to. Pinned ' +
         'links can be listed with search_links and pinned_only=true.',
-      inputSchema: {
+      inputSchema: z.object({
         link_id: linkId,
         pinned: z.boolean().describe('true to pin, false to unpin'),
-      },
+      }),
       annotations: { idempotentHint: true },
     },
     async ({ link_id, pinned }) =>
@@ -352,7 +351,7 @@ export function registerLinkWriteTools(
         'Deletes a bookmark and every preserved copy of the page. Two-step: the ' +
         'first call returns a confirmation token, the second call with that token ' +
         'performs the deletion.',
-      inputSchema: { link_id: linkId, confirm_token: confirmToken },
+      inputSchema: z.object({ link_id: linkId, confirm_token: confirmToken }),
       annotations: { destructiveHint: true },
     },
     async ({ link_id, confirm_token }) =>
@@ -400,7 +399,7 @@ export function registerLinkWriteTools(
         'an empty tag list strips all tags from all of them. With replace_tags=false ' +
         'the tags are added to the existing ones. Either way this needs a ' +
         'confirmation token, because it rewrites many records at once.',
-      inputSchema: {
+      inputSchema: z.object({
         link_ids: z
           .array(linkId)
           .min(1)
@@ -418,7 +417,7 @@ export function registerLinkWriteTools(
           .optional()
           .describe('Move every link to this collection (owner only)'),
         confirm_token: confirmToken,
-      },
+      }),
       annotations: { destructiveHint: true },
     },
     async ({ link_ids, tags, replace_tags, collection_id, confirm_token }) =>
@@ -490,14 +489,14 @@ export function registerLinkWriteTools(
         'Deletes a set of bookmarks and all their preserved copies. Two-step: the ' +
         'first call returns a confirmation token that is bound to exactly this set ' +
         'of ids — adding an id afterwards invalidates it.',
-      inputSchema: {
+      inputSchema: z.object({
         link_ids: z
           .array(linkId)
           .min(1)
           .max(MAX_BULK_LINKS)
           .describe(`Link ids, at most ${MAX_BULK_LINKS}`),
         confirm_token: confirmToken,
-      },
+      }),
       annotations: { destructiveHint: true },
     },
     async ({ link_ids, confirm_token }) =>
@@ -539,7 +538,7 @@ export function registerLinkWriteTools(
         'or now blocks the archiver, the old copies are lost and nothing replaces ' +
         'them. That is why it needs a confirmation token.\n\n' +
         'The work happens in a background worker; get_worker_stats shows the queue.',
-      inputSchema: { link_id: linkId, confirm_token: confirmToken },
+      inputSchema: z.object({ link_id: linkId, confirm_token: confirmToken }),
       annotations: { destructiveHint: true },
     },
     async ({ link_id, confirm_token }) =>
@@ -580,14 +579,14 @@ export function registerLinkWriteTools(
         'a set of links while keeping the bookmarks themselves. Useful to reclaim ' +
         'disk space. Unlike represerve_link this does NOT re-archive anything — use ' +
         'that tool if the copies should be recreated.',
-      inputSchema: {
+      inputSchema: z.object({
         link_ids: z
           .array(linkId)
           .min(1)
           .max(MAX_BULK_LINKS)
           .describe(`Link ids, at most ${MAX_BULK_LINKS}`),
         confirm_token: confirmToken,
-      },
+      }),
       annotations: { destructiveHint: true },
     },
     async ({ link_ids, confirm_token }) =>

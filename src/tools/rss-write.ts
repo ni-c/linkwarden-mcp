@@ -1,7 +1,5 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { LinkwardenApi } from '../api.js';
 import {
   confirmationPrompt,
   setResourceKey,
@@ -22,6 +20,8 @@ import {
   idPath,
   rssSubscriptionId,
 } from '../schema.js';
+
+import type { LinkwardenApi } from '../api.js';
 import { shapeRssSubscription, type RawRssSubscription } from '../shape.js';
 
 export function registerRssWriteTools(
@@ -45,7 +45,7 @@ export function registerRssWriteTools(
         'versions before 2.14 it does not check those addresses at all. Do not ' +
         'subscribe to a feed you do not trust. Subscription names must be unique ' +
         'per account, and instances cap the number of subscriptions (20 by default).',
-      inputSchema: {
+      inputSchema: z.object({
         name: z
           .string()
           .trim()
@@ -66,7 +66,7 @@ export function registerRssWriteTools(
           .describe(
             'Collection by name; it is created if it does not exist. Mutually exclusive with collection_id.'
           ),
-      },
+      }),
       annotations: {},
     },
     async ({ name, url, collection_id, collection_name }) =>
@@ -105,10 +105,10 @@ export function registerRssWriteTools(
       description:
         'Stops polling a feed. Links that were already created from it stay where ' +
         'they are — only the subscription goes away.',
-      inputSchema: {
+      inputSchema: z.object({
         rss_subscription_id: rssSubscriptionId,
         confirm_token: confirmToken,
-      },
+      }),
       annotations: { destructiveHint: true },
     },
     async ({ rss_subscription_id, confirm_token }) =>

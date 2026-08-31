@@ -1,8 +1,5 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { LinkwardenApi } from '../api.js';
-import { jsonResult, run, textResult, untrustedResult } from '../result.js';
 import {
   ArchivedFormat,
   collectionId,
@@ -21,6 +18,9 @@ import {
   UNTRUSTED_METADATA_NOTE,
   type RawLink,
 } from '../shape.js';
+
+import type { LinkwardenApi } from '../api.js';
+import { jsonResult, run, textResult, untrustedResult } from '../result.js';
 
 /**
  * Upper bound on the links returned in one call. Linkwarden itself pages at
@@ -85,7 +85,7 @@ export function registerLinkReadTools(
         'Returns at most ' +
         `${MAX_LINKS} links plus a next_cursor for the following page. Article text ` +
         'is not included; use get_link_content for that.',
-      inputSchema: {
+      inputSchema: z.object({
         query: z
           .string()
           .max(2048)
@@ -101,7 +101,7 @@ export function registerLinkReadTools(
           .describe('Only return links pinned by the authenticated account'),
         sort: linkSort,
         cursor,
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     async ({ query, collection_id, tag_id, pinned_only, sort, cursor: from }) =>
@@ -177,7 +177,7 @@ export function registerLinkReadTools(
         'Fetches one bookmark with its tags, collection and which preserved ' +
         'formats exist. Does not include the archived page text — use ' +
         'get_link_content for that.',
-      inputSchema: { link_id: linkId },
+      inputSchema: z.object({ link_id: linkId }),
       annotations: { readOnlyHint: true },
     },
     async ({ link_id }) =>
@@ -203,7 +203,7 @@ export function registerLinkReadTools(
         'Long articles are returned in slices — pass the offset from the previous ' +
         'result to continue. If the link has no readable archive, the tool says so ' +
         'and represerve_link can create one.',
-      inputSchema: {
+      inputSchema: z.object({
         link_id: linkId,
         offset: z
           .number()
@@ -220,7 +220,7 @@ export function registerLinkReadTools(
           .describe(
             `Maximum characters to return, default ${DEFAULT_CONTENT_CHARS}`
           ),
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     async ({ link_id, offset, max_chars }) =>

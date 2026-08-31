@@ -1,7 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-import type { LinkwardenApi } from '../api.js';
-import { jsonResult, run } from '../result.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import {
   shapeLink,
   shapeRssSubscription,
@@ -9,6 +6,10 @@ import {
   type RawLink,
   type RawRssSubscription,
 } from '../shape.js';
+import { z } from 'zod';
+
+import type { LinkwardenApi } from '../api.js';
+import { jsonResult, run } from '../result.js';
 
 interface RawUser {
   id?: number;
@@ -45,7 +46,7 @@ export function registerOverviewReadTools(
         'whether duplicate URLs are rejected. Useful as a connectivity check and ' +
         'before creating links, because the defaults decide what get_link_content ' +
         'will later have to read.',
-      inputSchema: {},
+      inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
     async () =>
@@ -80,7 +81,7 @@ export function registerOverviewReadTools(
         'added ones together with everything the account has pinned, deduplicated. ' +
         'A quick "what is going on here" overview — use search_links for anything ' +
         'targeted.',
-      inputSchema: {},
+      inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
     async () =>
@@ -103,7 +104,7 @@ export function registerOverviewReadTools(
       description:
         'Lists the RSS feeds this account subscribes to. Linkwarden polls them and ' +
         'files new entries as links in the configured collection.',
-      inputSchema: {},
+      inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
     async () =>
@@ -128,7 +129,7 @@ export function registerOverviewReadTools(
         'Requires the instance administrator account (the id in NEXT_PUBLIC_ADMIN, 1 ' +
         'by default); every other account gets HTTP 403 here. The counts cover the ' +
         'whole instance, not just this account.',
-      inputSchema: {},
+      inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
     async () =>

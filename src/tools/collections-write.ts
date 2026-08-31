@@ -1,9 +1,6 @@
 import { createHash } from 'node:crypto';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { LinkwardenApi } from '../api.js';
 import {
   confirmationPrompt,
   setResourceKey,
@@ -16,6 +13,8 @@ import {
   run,
   textResult,
 } from '../result.js';
+
+import type { LinkwardenApi } from '../api.js';
 import { collectionId, confirmToken, idPath } from '../schema.js';
 import { shapeCollection, type RawCollection } from '../shape.js';
 
@@ -57,7 +56,7 @@ export function registerCollectionWriteTools(
         'Creates a collection. Pass parent_id to nest it under an existing ' +
         'collection. New collections are private; use update_collection to publish ' +
         'one.',
-      inputSchema: {
+      inputSchema: z.object({
         name: z.string().trim().min(1).max(2048).describe('Collection name'),
         description: z.string().trim().max(2048).optional(),
         parent_id: collectionId
@@ -69,7 +68,7 @@ export function registerCollectionWriteTools(
           .max(50)
           .optional()
           .describe('Accent colour as a hex value, e.g. #0ea5e9'),
-      },
+      }),
       annotations: {},
     },
     async ({ name, description, parent_id, color }) =>
@@ -101,7 +100,7 @@ export function registerCollectionWriteTools(
         'and ignores null.\n\n' +
         'Setting is_public=true needs a confirmation token: it makes the collection ' +
         'and every link in it readable by anyone who has the URL, without logging in.',
-      inputSchema: {
+      inputSchema: z.object({
         collection_id: collectionId,
         name: z.string().trim().min(1).max(2048).optional(),
         description: z.string().trim().max(2048).optional(),
@@ -121,7 +120,7 @@ export function registerCollectionWriteTools(
           ),
         color: z.string().trim().max(50).optional(),
         confirm_token: confirmToken,
-      },
+      }),
       annotations: { idempotentHint: true },
     },
     async ({
@@ -235,7 +234,10 @@ export function registerCollectionWriteTools(
         'copy of those pages, and every sub-collection below it are deleted too. ' +
         'Two-step: the first call reports how many links would be lost and returns a ' +
         'confirmation token.',
-      inputSchema: { collection_id: collectionId, confirm_token: confirmToken },
+      inputSchema: z.object({
+        collection_id: collectionId,
+        confirm_token: confirmToken,
+      }),
       annotations: { destructiveHint: true },
     },
     async ({ collection_id, confirm_token }) =>
