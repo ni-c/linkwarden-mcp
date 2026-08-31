@@ -47,7 +47,7 @@ is a property of Linkwarden, not a bug here, and `search_links` says so in its r
   do not return Linkwarden's rows verbatim.
 - **No new runtime dependencies** without a very good reason; the small tree is a
   feature.
-- Run `npm run lint` before pushing — it checks both eslint and prettier, and prettier
+- Run `npm run lint` before pushing — it checks both oxlint and prettier, and prettier
   also validates the YAML, JSON and Markdown files.
 
 ## Questions and bugs
