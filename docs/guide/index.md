@@ -21,7 +21,7 @@ renaming and merging tags, bulk-tagging a batch of search results.
 
 **Not being a foot-gun.** The parts that are easy to get wrong are handled explicitly:
 partial updates merge rather than replace, output is an allowlist rather than a dump of
-Linkwarden's database rows, and anything destructive needs a confirmation token bound
+Linkwarden's database rows, and anything destructive [asks a person](/guide/approval) — bound
 to the exact target.
 
 ## What it deliberately does not do

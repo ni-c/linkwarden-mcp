@@ -15,9 +15,18 @@ and `LINKWARDEN_DENY_TOOLS` narrow the list to the ones you want, and
 `LINKWARDEN_ALLOW_TOOLS=essential` selects the 8 marked **essential**
 below — see [choosing the tools that load](/guide/configuration#choosing-the-tools-that-load).
 
-Tools marked **write, destructive** need a confirmation token: call them once
-without `confirm_token` to get one, then again with it. The token is bound to the
-exact target and expires after five minutes. See [Security](/guide/security).
+👤 marks a tool that **asks a person** before it acts, through MCP
+elicitation — a dialog the model cannot answer on its behalf. Where the
+client cannot show one, it falls back to a two-call `confirm_token` bound
+to the exact target and expiring after five minutes, and says which of the
+two it was. `ELICITATION=false` takes that fallback deliberately; it never
+removes the guard. See [Asking a person](/guide/approval).
+
+Every tool declares all four MCP annotations — `readOnlyHint`,
+`destructiveHint`, `idempotentHint`, `openWorldHint`. They are a hint a
+client may ignore; the dialog is enforced here and cannot be. The two lists
+are deliberately not the same one: `create_link` writes and is not asked
+about, `update_collection` is asked about only when it *publishes*.
 
 ## Read tools
 
@@ -147,7 +156,7 @@ Saves a bookmark. Linkwarden fetches the page title itself when no name is given
 | `collection_name` | string | no | Target collection by name; it is created if it does not exist. Mutually exclusive with collection_id. |
 | `tags` | string[] | no | Tag names. Tags that do not exist yet are created. |
 
-### `update_link`
+### `update_link` 👤
 
 **Update a link** — write, destructive, **essential**
 
@@ -174,7 +183,7 @@ Pins a link to the account's dashboard, or removes the pin. Pins are per account
 | `link_id` | integer | yes | Numeric id of the link — the "id" field returned by search_links, not its title or URL |
 | `pinned` | boolean | yes | true to pin, false to unpin |
 
-### `delete_link`
+### `delete_link` 👤
 
 **Delete a link** — write, destructive, **essential**
 
@@ -185,7 +194,7 @@ Deletes a bookmark and every preserved copy of the page. Two-step: the first cal
 | `link_id` | integer | yes | Numeric id of the link — the "id" field returned by search_links, not its title or URL |
 | `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `bulk_update_links`
+### `bulk_update_links` 👤
 
 **Retag or move many links at once** — write, destructive
 
@@ -199,7 +208,7 @@ Applies the same tag list and/or target collection to a set of links. Cheaper th
 | `collection_id` | integer | no | Move every link to this collection (owner only) |
 | `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `bulk_delete_links`
+### `bulk_delete_links` 👤
 
 **Delete many links at once** — write, destructive
 
@@ -210,7 +219,7 @@ Deletes a set of bookmarks and all their preserved copies. Two-step: the first c
 | `link_ids` | integer[] | yes | Link ids, at most 200 |
 | `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `represerve_link`
+### `represerve_link` 👤
 
 **Preserve a link again** — write, destructive
 
@@ -221,7 +230,7 @@ Has Linkwarden archive the page again. This first DELETES the existing preserved
 | `link_id` | integer | yes | Numeric id of the link — the "id" field returned by search_links, not its title or URL |
 | `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `delete_link_preservations`
+### `delete_link_preservations` 👤
 
 **Delete the preserved copies of links** — write, destructive
 
@@ -245,7 +254,7 @@ Creates a collection. Pass parent_id to nest it under an existing collection. Ne
 | `parent_id` | integer | no | Nest the new collection under this one |
 | `color` | string | no | Accent colour as a hex value, e.g. #0ea5e9 |
 
-### `update_collection`
+### `update_collection` 👤
 
 **Update a collection** — write, destructive
 
@@ -261,7 +270,7 @@ Changes a collection. Fields that are not given stay as they are: the tool reads
 | `color` | string | no |  |
 | `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `delete_collection`
+### `delete_collection` 👤
 
 **Delete a collection** — write, destructive
 
@@ -288,18 +297,19 @@ Creates tags, or updates the ones that already exist — the underlying route is
 | `archive_as_wayback_machine` | boolean,null | no | Submit the URL to the Internet Archive for links carrying this tag. null inherits the account default. |
 | `ai_tag` | boolean,null | no | Let the configured AI model assign this tag for links carrying this tag. null inherits the account default. |
 
-### `rename_tag`
+### `rename_tag` 👤
 
 **Rename a tag** — write, destructive
 
-Renames a tag; every link carrying it keeps it. Tag names are unique per account, so renaming a tag to a name that already exists fails — use merge_tags to fold two tags into one instead.
+Renames a tag; every link carrying it keeps it. Tag names are unique per account, so renaming a tag to a name that already exists fails — use merge_tags to fold two tags into one instead. Asks a person first; where the client cannot show a dialog, call once to receive a token and again with it.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `tag_id` | integer | yes | Numeric id of the tag — the "id" field returned by list_tags |
 | `name` | string | yes | New tag name |
+| `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `delete_tags`
+### `delete_tags` 👤
 
 **Delete tags** — write, destructive
 
@@ -310,7 +320,7 @@ Deletes one or more tags. The links keep existing, they just lose the tag. Two-s
 | `tag_ids` | integer[] | yes | Tag ids, at most 50 |
 | `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `merge_tags`
+### `merge_tags` 👤
 
 **Merge tags into one** — write, destructive
 
@@ -335,7 +345,7 @@ Subscribes to an RSS or Atom feed. Linkwarden polls it and files every new entry
 | `collection_id` | integer | no | Collection the entries land in. Mutually exclusive with collection_name. |
 | `collection_name` | string | no | Collection by name; it is created if it does not exist. Mutually exclusive with collection_id. |
 
-### `delete_rss_subscription`
+### `delete_rss_subscription` 👤
 
 **Delete an RSS subscription** — write, destructive
 

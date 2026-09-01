@@ -61,6 +61,7 @@ collections this server should see rather than handing it an admin token.
 | `LINKWARDEN_READ_ONLY`    | no       | `true` registers only the read tools                                               |
 | `LINKWARDEN_ALLOW_TOOLS`  | no       | Comma-separated tool names, `list_*` prefixes, or `essential` for a curated preset |
 | `LINKWARDEN_DENY_TOOLS`   | no       | Same syntax; removed from whatever `LINKWARDEN_ALLOW_TOOLS` left                   |
+| `ELICITATION`             | no       | `false` replaces the approval dialog with the two-call token. **Not prefixed**     |
 | `LINKWARDEN_INSECURE_TLS` | no       | `true` accepts self-signed certificates (scoped to this connection)                |
 
 > **Use `https://`.** Over plain http the token travels unencrypted; the server prints
@@ -166,28 +167,30 @@ docker run --rm -i \
 
 ### Writing
 
-Not registered at all when `LINKWARDEN_READ_ONLY=true`. Tools marked 🔒 require a
-confirmation token.
+Not registered at all when `LINKWARDEN_READ_ONLY=true`. Tools marked 👤 **ask a
+person** through MCP elicitation — a dialog the model cannot answer on its behalf —
+and fall back to a two-call `confirm_token` where the client cannot show one. See
+[Asking a person](https://linkwarden-mcp.ni-c.de/guide/approval).
 
 | Tool                           | Description                                                                  |
 | ------------------------------ | ---------------------------------------------------------------------------- |
 | `create_link`                  | Save a bookmark, optionally with tags and a collection (created on demand).  |
-| `update_link`                  | Change title, description, tags or collection. 🔒 only when the URL changes. |
+| `update_link`                  | Change title, description, tags or collection. 👤 only when the URL changes. |
 | `set_link_pinned`              | Pin or unpin a link for this account.                                        |
-| `delete_link` 🔒               | Delete a bookmark and its preserved copies.                                  |
-| `bulk_update_links` 🔒         | Apply one tag list and/or collection to many links.                          |
-| `bulk_delete_links` 🔒         | Delete many bookmarks at once.                                               |
-| `represerve_link` 🔒           | Drop the existing archives and preserve the page again.                      |
-| `delete_link_preservations` 🔒 | Drop the archives of several links, keeping the bookmarks.                   |
+| `delete_link` 👤               | Delete a bookmark and its preserved copies.                                  |
+| `bulk_update_links` 👤         | Apply one tag list and/or collection to many links.                          |
+| `bulk_delete_links` 👤         | Delete many bookmarks at once.                                               |
+| `represerve_link` 👤           | Drop the existing archives and preserve the page again.                      |
+| `delete_link_preservations` 👤 | Drop the archives of several links, keeping the bookmarks.                   |
 | `create_collection`            | Create a collection, optionally nested.                                      |
-| `update_collection`            | Rename, re-parent or publish a collection. 🔒 only when publishing.          |
-| `delete_collection` 🔒         | Delete a collection — cascades to its links and sub-collections.             |
+| `update_collection`            | Rename, re-parent or publish a collection. 👤 only when publishing.          |
+| `delete_collection` 👤         | Delete a collection — cascades to its links and sub-collections.             |
 | `create_tags`                  | Create tags or change their archival settings (upsert by name).              |
-| `rename_tag`                   | Rename a tag.                                                                |
-| `delete_tags` 🔒               | Delete tags; the links keep existing.                                        |
-| `merge_tags` 🔒                | Fold several tags into one new tag.                                          |
+| `rename_tag` 👤                | Rename a tag — every link that carries it follows.                           |
+| `delete_tags` 👤               | Delete tags; the links keep existing.                                        |
+| `merge_tags` 👤                | Fold several tags into one new tag.                                          |
 | `create_rss_subscription`      | Subscribe to an RSS/Atom feed.                                               |
-| `delete_rss_subscription` 🔒   | Stop polling a feed.                                                         |
+| `delete_rss_subscription` 👤   | Stop polling a feed.                                                         |
 
 ### Deliberately not exposed
 
@@ -206,13 +209,16 @@ confirmation token.
 
 ## Safety
 
-- **Destructive tools are two-step.** The first call returns a short-lived
-  confirmation token bound to the exact target; only a second call carrying that token
-  performs the operation. A model cannot satisfy this gate on its own, and a token
+- **Destructive tools ask a person.** Where the client supports MCP elicitation they
+  raise a real dialog that the model cannot answer on its behalf. Where it does not,
+  the first call returns a short-lived token bound to the exact target and only a
+  second call carrying it performs the operation — which proves the call was made
+  twice with the same arguments and nothing more, and the text says so. An approval
   issued for one link, tag set or change cannot be replayed for another.
-- **Widening visibility counts as destructive.** Publishing a collection and changing
-  a link's URL — which deletes every preserved copy of the old page — both need a
-  confirmation, not just deletions.
+  `ELICITATION=false` takes that fallback deliberately; it never removes the guard.
+- **Losing something is not only deletion.** Publishing a collection, changing a
+  link's URL — which deletes every preserved copy of the old page — and renaming a
+  tag, which follows every link that carries it, are all asked about.
 - **Confirmation prompts never quote content from Linkwarden.** Titles, URLs,
   descriptions and collection names come from saved pages and from other users of the
   instance; only counts and ids appear in the text a model reads.

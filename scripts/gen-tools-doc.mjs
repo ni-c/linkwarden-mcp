@@ -30,6 +30,7 @@ async function listTools() {
     token: 'placeholder',
     insecureTls: false,
     readOnly: false,
+    elicitation: true,
   });
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair();
@@ -91,9 +92,18 @@ function renderTool(tool) {
       : 'write';
   // Generated from the same constant the filter reads, so "which tools does
   // `essential` select" cannot be written down twice and drift.
+  // Read off the schema rather than from a list kept next to it: a tool is
+  // guarded exactly when it accepts the fallback token, and that is a fact
+  // about this server's own registration.
+  const asks = Object.hasOwn(
+    tool.inputSchema?.properties ?? {},
+    'confirm_token'
+  )
+    ? ' 👤'
+    : '';
   const preset = ESSENTIAL_TOOLS.includes(tool.name) ? ', **essential**' : '';
 
-  const lines = [`### \`${tool.name}\``, ''];
+  const lines = [`### \`${tool.name}\`${asks}`, ''];
   if (tool.title) lines.push(`**${tool.title}** — ${kind}${preset}`, '');
   lines.push(escapeCell(tool.description), '');
 
@@ -142,9 +152,18 @@ function render(tools) {
     `\`LINKWARDEN_ALLOW_TOOLS=essential\` selects the ${ESSENTIAL_TOOLS.length} marked **essential**`,
     'below — see [choosing the tools that load](/guide/configuration#choosing-the-tools-that-load).',
     '',
-    'Tools marked **write, destructive** need a confirmation token: call them once',
-    'without `confirm_token` to get one, then again with it. The token is bound to the',
-    'exact target and expires after five minutes. See [Security](/guide/security).',
+    '👤 marks a tool that **asks a person** before it acts, through MCP',
+    'elicitation — a dialog the model cannot answer on its behalf. Where the',
+    'client cannot show one, it falls back to a two-call `confirm_token` bound',
+    'to the exact target and expiring after five minutes, and says which of the',
+    'two it was. `ELICITATION=false` takes that fallback deliberately; it never',
+    'removes the guard. See [Asking a person](/guide/approval).',
+    '',
+    'Every tool declares all four MCP annotations — `readOnlyHint`,',
+    '`destructiveHint`, `idempotentHint`, `openWorldHint`. They are a hint a',
+    'client may ignore; the dialog is enforced here and cannot be. The two lists',
+    'are deliberately not the same one: `create_link` writes and is not asked',
+    'about, `update_collection` is asked about only when it *publishes*.',
     '',
     '## Read tools',
     '',

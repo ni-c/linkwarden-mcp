@@ -105,7 +105,7 @@ describe('error handling', () => {
     // A Next.js route without a branch for the method used falls through and
     // answers 200 with nothing at all.
     stubFetch(() => emptyResponse());
-    const client = await connectClient();
+    const client = await connectClient({}, 'accept');
     const result = await client.callTool({
       name: 'rename_tag',
       arguments: { tag_id: 3, name: 'refs' },

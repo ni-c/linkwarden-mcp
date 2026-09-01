@@ -24,8 +24,8 @@ features:
     details: Linkwarden keeps a permanent copy of every page it saves. get_link_content serves that article text, so a saved link can be summarised or quoted without fetching the live site again — and long articles are sliced, not dumped.
   - title: Organises without clobbering
     details: Linkwarden's update routes replace whole records. This server reads the current state and merges, so changing a title never silently strips a link's tags or a collection's collaborators.
-  - title: Destructive actions are two-step
-    details: Deleting, re-preserving or publishing needs a server-issued confirmation token bound to the exact target. A model cannot satisfy that gate on its own, and a token for one link cannot be replayed for another.
+  - title: Destructive actions ask a person
+    details: 'Deleting, re-preserving, renaming a tag or publishing a collection raises a real dialog through MCP elicitation — one the model cannot answer on its behalf. Where the client cannot show one it falls back to a token bound to the exact target, and says which of the two it was rather than implying somebody approved.'
   - title: You choose what is registered
     details: LINKWARDEN_READ_ONLY=true does not register the write tools at all — they are absent from tools/list, not merely refused at call time. LINKWARDEN_ALLOW_TOOLS cuts finer still — essential for a curated eight, your own comma-separated list, or a whole family with list_* — while LINKWARDEN_DENY_TOOLS removes individual tools. A name that matches nothing stops the server at startup rather than quietly hiding a tool.
 ---
@@ -53,7 +53,7 @@ features:
   <rect class="node-accent" x="280" y="60" width="170" height="100" rx="10" />
   <text class="label-title" x="365" y="95" text-anchor="middle">linkwarden-mcp</text>
   <text class="label-muted" x="365" y="115" text-anchor="middle">28 tools · allowlisted output</text>
-  <text class="label-muted" x="365" y="133" text-anchor="middle">confirm tokens</text>
+  <text class="label-muted" x="365" y="133" text-anchor="middle">asks a person</text>
 
   <rect class="node" x="550" y="70" width="150" height="80" rx="10" />
   <text class="label-title" x="625" y="103" text-anchor="middle">Linkwarden</text>
@@ -71,7 +71,7 @@ features:
   <text class="label-muted" x="625" y="232" text-anchor="middle">screenshot, single-file HTML</text>
 </svg>
 <!-- ARCHITECTURE:END -->
-<figcaption>The server holds no state of its own beyond short-lived confirmation tokens.</figcaption>
+<figcaption>The server holds no state of its own beyond short-lived approvals.</figcaption>
 </figure>
 </div>
 

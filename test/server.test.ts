@@ -19,10 +19,10 @@ import {
 /** Tools that must carry destructiveHint, because they lose data. */
 /**
  * Tools that carry a confirmation, which is not the same list as the
- * destructive ones and should not be conflated with it. `rename_tag` is
- * annotated destructive and has no confirmation yet; publishing a collection
- * is confirmed and destroys nothing. The annotation describes what a call
- * does, the confirmation decides whether a person is asked first.
+ * destructive ones and should not be conflated with it. Publishing a
+ * collection is confirmed and destroys nothing; `create_link` writes and is
+ * not confirmed. The annotation describes what a call does, the confirmation
+ * decides whether a person is asked first.
  */
 const GUARDED_TOOLS = [
   'delete_link',
@@ -33,6 +33,7 @@ const GUARDED_TOOLS = [
   'delete_collection',
   'delete_tags',
   'merge_tags',
+  'rename_tag',
   'delete_rss_subscription',
   'update_link',
   'update_collection',
@@ -48,8 +49,8 @@ const DESTRUCTIVE_TOOLS = [
   'delete_tags',
   'merge_tags',
   'delete_rss_subscription',
-  // Added with the annotation sweep: both replace something written with no
-  // way back — update_link discards the preserved copies when the URL
+  // Added with the annotation sweep: all three replace something written with
+  // no way back — update_link discards the preserved copies when the URL
   // changes, rename_tag replaces a name on every link that carries the tag.
   'update_link',
   'update_collection',

@@ -20,24 +20,37 @@ included in an error message, and never sent anywhere but the configured host: r
 are refused outright (`redirect: 'error'`), because a reverse proxy redirecting http to
 https would otherwise replay the `Authorization` header to whatever host it names.
 
-## Destructive tools are two-step
+## Destructive tools ask a person
 
-Anything that loses data requires a **server-generated confirmation token**, never a
-boolean the model can set for itself. The first call returns a short-lived token and a
-description of what will happen; only a second call carrying that token executes.
+Anything that loses data puts the question to a **person**, through MCP elicitation —
+a dialog the model cannot answer on its behalf, and which nothing proceeds without.
+Never a boolean the model can set for itself.
 
-The token is bound to the exact target. For list-valued operations it is bound to a
-sha256 fingerprint of the sorted id set, so a confirmation issued for `[1, 2]` cannot
+Where the client cannot show a dialog, the first call returns a short-lived token and a
+description of what will happen; only a second call carrying that token executes. Be
+clear about what that proves, because this server is: **the call was made twice with
+the same arguments, and nothing more.** A model can read the token out of the first
+result and quote it back in the same turn. The fallback text says so rather than
+implying somebody approved, and names whether it was the client that could not be asked
+or the operator who switched the dialog off with `ELICITATION=false`.
+
+Either way the approval is bound to the exact target. For list-valued operations it is
+bound to a sha256 fingerprint of the sorted id set, so one issued for `[1, 2]` cannot
 execute `[1, 2, 3]`. `bulk_update_links` and `merge_tags` bind it to the change as well
-— a confirmation for "add one tag" cannot be replayed as "replace all tags with
-nothing".
+— an approval for "add one tag" cannot be replayed as "replace all tags with nothing" —
+and `rename_tag` binds it to the new name.
 
-Two non-deletions count as destructive because they lose data just as irreversibly:
+Three non-deletions are on the list because they lose something just as irreversibly:
 
 - **Publishing a collection** (`update_collection` with `is_public=true`) makes it
   readable by anyone with the URL.
 - **Changing a link's URL**, which makes Linkwarden delete every preserved copy of the
   old page.
+- **Renaming a tag**, which follows every link that carries it. Linkwarden keeps no
+  history of what a tag used to be called, and a saved search built on the old name
+  simply stops matching.
+
+See [Asking a person](/guide/approval).
 
 ## Prompt injection is treated as the default case
 

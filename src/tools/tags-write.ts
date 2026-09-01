@@ -121,10 +121,13 @@ export function registerTagWriteTools(
       description:
         'Renames a tag; every link carrying it keeps it. Tag names are unique per ' +
         'account, so renaming a tag to a name that already exists fails — use ' +
-        'merge_tags to fold two tags into one instead.',
+        'merge_tags to fold two tags into one instead. Asks a person first; ' +
+        'where the client cannot show a dialog, call once to receive a token ' +
+        'and again with it.',
       inputSchema: z.object({
         tag_id: tagId,
         name: z.string().trim().min(1).max(50).describe('New tag name'),
+        confirm_token: confirmToken,
       }),
       annotations: {
         // Replaces a name somebody chose, on every link that carries the tag.
@@ -135,8 +138,38 @@ export function registerTagWriteTools(
         openWorldHint: false,
       },
     },
-    async ({ tag_id, name }) =>
+    async ({ tag_id, name, confirm_token }, mcp) =>
       run(async () => {
+        // One call, every link that carries the tag. Linkwarden keeps no
+        // history of what a tag used to be called, and a saved search or a
+        // habit built on the old name simply stops matching.
+        //
+        // Bound to the id *and* the new name: an approval for "rename 7 to
+        // reading" must not execute "rename 7 to archive".
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `rename tag ${tag_id}`,
+            consequence:
+              'Every link that carries the tag shows the new name, and the old ' +
+              'one is not recoverable from here.',
+            resourceKey: setResourceKey('rename_tag', [String(tag_id), name]),
+            token: confirm_token,
+            details: [{ label: 'New name', value: name }],
+            toolName: 'rename_tag',
+            hint: 'Tick to rename it, leave it to cancel.',
+          }
+        );
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
+        }
+        if (outcome.decision === 'declined') {
+          return errorResult(`The user declined. rename_tag did nothing.`);
+        }
+        if (outcome.decision === 'pending') return outcome.result;
+
         const updated = await api.put(idPath('/tags', tag_id), { name });
         assertNotErrorMessage(updated, 'Renaming the tag');
         return jsonResult({ updated: shapeTag(updated as RawTag) });

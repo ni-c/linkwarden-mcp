@@ -49,6 +49,17 @@ tool it cannot see, so nothing depends on the model respecting an instruction.
 Worth pairing with a Linkwarden account that only has read access to the collections it
 is shared into, so the restriction holds on both ends.
 
+## Turning the approval dialog off
+
+The destructive tools ask a person through MCP elicitation before they act.
+`ELICITATION=false` takes them to the two-call token instead. It does not remove the
+guard; there is no setting in which a guarded call goes unannounced.
+
+The variable deliberately carries no `LINKWARDEN_` prefix, which means it reaches
+every MCP server in the same environment, and — unlike the booleans here — a value it
+does not recognise **stops the server** rather than failing off. See
+[Asking a person](/guide/approval).
+
 ## Choosing the tools that load
 
 Read-only mode is one cut, along a line this server drew for you.

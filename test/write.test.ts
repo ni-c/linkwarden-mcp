@@ -711,17 +711,60 @@ describe('tag writes', () => {
     });
   });
 
-  it('renames a tag', async () => {
+  it('renames a tag once a person agrees', async () => {
     const calls = stubFetch(() =>
       envelopeResponse(tagFixture({ name: 'refs' }))
     );
-    const client = await connectClient();
+    const client = await connectClient({}, 'accept');
     await client.callTool({
       name: 'rename_tag',
       arguments: { tag_id: 3, name: 'refs' },
     });
+    expect(client.prompts).toHaveLength(1);
     expect(calls[0]?.url).toBe('https://links.example.net/api/v1/tags/3');
     expect(requestBody(calls[0]!)).toEqual({ name: 'refs' });
+  });
+
+  it('asks before a rename, because every link carrying the tag follows', async () => {
+    // Linkwarden keeps no history of what a tag used to be called, and a saved
+    // search or a habit built on the old name simply stops matching. wikijs
+    // guards update_tag for the same reason.
+    const calls = stubFetch(() => envelopeResponse(tagFixture()));
+    const client = await connectClient({}, 'decline');
+    const result = await client.callTool({
+      name: 'rename_tag',
+      arguments: { tag_id: 3, name: 'refs' },
+    });
+    expect(result.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('binds a rename approval to the new name, not just the tag', async () => {
+    // An approval for "rename 3 to reading" must not execute
+    // "rename 3 to archive" — the model chooses the second name.
+    const calls = stubFetch(() => envelopeResponse(tagFixture()));
+    const client = await connectClient();
+    const first = await client.callTool({
+      name: 'rename_tag',
+      arguments: { tag_id: 3, name: 'reading' },
+    });
+    const token = /confirm_token="([a-f0-9]+)"/.exec(resultText(first))?.[1];
+    expect(token).toBeDefined();
+
+    const swapped = await client.callTool({
+      name: 'rename_tag',
+      arguments: { tag_id: 3, name: 'archive', confirm_token: token },
+    });
+    expect(swapped.isError).toBe(true);
+    expect(resultText(swapped)).toContain('issued for different arguments');
+    expect(calls).toHaveLength(0);
+
+    const done = await client.callTool({
+      name: 'rename_tag',
+      arguments: { tag_id: 3, name: 'reading', confirm_token: token },
+    });
+    expect(done.isError).toBeFalsy();
+    expect(calls).toHaveLength(1);
   });
 
   it('confirms tag deletion against the bulk route', async () => {

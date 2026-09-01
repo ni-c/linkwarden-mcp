@@ -72,7 +72,10 @@ export function createServer(config: Config): McpServer {
     const confirmations = new ConfirmationStore();
     // One approver per server: it holds the key that seals the request state
     // carried out through the client and back.
-    const approval = createApproval({ server: 'linkwarden-mcp' });
+    const approval = createApproval({
+      server: 'linkwarden-mcp',
+      elicitation: config.elicitation,
+    });
     registerLinkWriteTools(server, api, confirmations, approval);
     registerCollectionWriteTools(server, api, confirmations, approval);
     registerTagWriteTools(server, api, confirmations, approval);
