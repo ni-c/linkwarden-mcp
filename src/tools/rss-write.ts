@@ -41,8 +41,16 @@ export function registerRssWriteTools(
         'the request is made. That check covers the feed URL only — Linkwarden ' +
         'creates and preserves a link for every entry the feed contains, and on ' +
         'versions before 2.14 it does not check those addresses at all. Do not ' +
-        'subscribe to a feed you do not trust. Subscription names must be unique ' +
-        'per account, and instances cap the number of subscriptions (20 by default).',
+        'subscribe to a feed you do not trust.\n\n' +
+        'Linkwarden 2.14 and later apply their own check as well, and it is ' +
+        'stricter: the feed URL is resolved and any address on a private or ' +
+        'loopback range is refused with "URL resolves to a blocked internal ' +
+        'hostname". A feed on the same private network as the instance — a ' +
+        'company intranet, another container — therefore cannot be subscribed ' +
+        'at all, however legitimate. That refusal comes from Linkwarden, not ' +
+        'from here, and no argument changes it.\n\n' +
+        'Subscription names must be unique per account, and instances cap the ' +
+        'number of subscriptions (20 by default).',
       inputSchema: z.object({
         name: z
           .string()

@@ -63,11 +63,18 @@ const SEARCH_SYNTAX = [
   '',
   'Where Meilisearch is available the filters are:',
   '  url:  name:  description:  type:  collection:  tag:  pinned:  public:  before:  after:',
-  'Quote values that contain spaces, e.g. collection:"Read later". Prefix a filter',
-  'with ! to negate it, e.g. !tag:archive. pinned: and public: take true or false;',
-  'before: and after: take a date such as 2026-01-31. If the instance sets',
-  'SEARCH_FILTER_LIMIT, field filters beyond that count are dropped silently, so',
-  'prefer few, specific filters.',
+  '',
+  'These filters match the WHOLE value, not a substring. `name:Report` does not',
+  'find a link called "Quarterly Report" — it finds one whose title is exactly',
+  '"Report". Quote values that contain spaces: name:"Quarterly Report". An empty',
+  'result from a field filter therefore usually means the value was a fragment,',
+  'not that the filter is unsupported. Plain text without a filter DOES match',
+  'substrings, so search for the fragment on its own when unsure.',
+  '',
+  'Prefix a filter with ! to negate it, e.g. !tag:archive. pinned: and public:',
+  'take true or false; before: and after: take a date such as 2026-01-31. If the',
+  'instance sets SEARCH_FILTER_LIMIT, field filters beyond that count are dropped',
+  'silently, so prefer few, specific filters.',
 ].join('\n');
 
 export function registerLinkReadTools(
@@ -85,7 +92,11 @@ export function registerLinkReadTools(
         `${SEARCH_SYNTAX}\n\n` +
         'Returns at most ' +
         `${MAX_LINKS} links plus a next_cursor for the following page. Article text ` +
-        'is not included; use get_link_content for that.',
+        'is not included; use get_link_content for that.\n\n' +
+        'Indexing is asynchronous where Meilisearch is used: a link created ' +
+        'moments ago is not searchable yet. An empty result straight after a ' +
+        'write means the index has not caught up, not that the write failed — ' +
+        'get_link by id confirms it exists.',
       inputSchema: z.object({
         query: z
           .string()
@@ -203,7 +214,11 @@ export function registerLinkReadTools(
         'text.\n\n' +
         'Long articles are returned in slices — pass the offset from the previous ' +
         'result to continue. If the link has no readable archive, the tool says so ' +
-        'and represerve_link can create one.',
+        'and represerve_link can create one.\n\n' +
+        'Preservation is asynchronous: Linkwarden queues the page and a worker ' +
+        'drives a headless browser over it, which takes minutes. A link created ' +
+        'moments ago has no readable archive yet, and that is not an error — ' +
+        'get_worker_stats shows the queue.',
       inputSchema: z.object({
         link_id: linkId,
         offset: z

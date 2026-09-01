@@ -9,19 +9,19 @@ import {
 import type { Config } from '../src/config.js';
 import { createServer } from '../src/server.js';
 import { ToolFilterError } from 'mcp-tool-allowlist';
-import { config, connectClient, stubFetchRejecting } from './helpers.js';
+import { connect, stubFetchRejecting, testConfig } from './harness.js';
 
 /** The tools a server built with this configuration actually offers. */
 async function toolNames(overrides: Partial<Config> = {}): Promise<string[]> {
   stubFetchRejecting();
-  const client = await connectClient(overrides);
+  const client = await connect(overrides);
   const { tools } = await client.listTools();
   return tools.map((t) => t.name).sort();
 }
 
 /** Builds a server directly, for the cases where construction is what fails. */
 function build(overrides: Partial<Config> = {}): void {
-  createServer({ ...config, ...overrides });
+  createServer(testConfig(overrides));
 }
 
 afterEach(() => {
@@ -110,7 +110,7 @@ describe('a filtered-out tool', () => {
     // This is the difference between removing the tool and disabling it: a
     // disabled tool still answers a call, which advertises a refusal.
     const calls = stubFetchRejecting();
-    const client = await connectClient({ allowTools: 'search_links' });
+    const client = await connect({ allowTools: 'search_links' });
 
     // SDK v2 reports an unknown tool as a JSON-RPC error rather than as a
     // result carrying isError. Either way the call fails and nothing reaches

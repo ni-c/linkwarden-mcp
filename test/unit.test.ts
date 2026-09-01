@@ -14,12 +14,7 @@ import {
   withQuery,
 } from '../src/schema.js';
 import { Notes } from '../src/shape.js';
-import {
-  connectClient,
-  resultText,
-  stubFetch,
-  textResponse,
-} from './helpers.js';
+import { connect, resultText, stubFetch, textResponse } from './harness.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -220,7 +215,7 @@ describe('result helpers', () => {
 describe('api client body handling', () => {
   it('falls back to the raw text when a JSON content type carries broken JSON', async () => {
     stubFetch(() => textResponse('{not json', 200, 'application/json'));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'get_worker_stats',
       arguments: {},
