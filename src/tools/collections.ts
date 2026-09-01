@@ -7,6 +7,7 @@ import {
 import { z } from 'zod';
 
 import type { LinkwardenApi } from '../api.js';
+import { READ_ONLY } from './annotations.js';
 import { jsonResult, run } from '../result.js';
 import { collectionId, idPath } from '../schema.js';
 
@@ -24,7 +25,7 @@ export function registerCollectionReadTools(
         'parentId, where null means the collection sits at the top level. ' +
         'Linkwarden does not page this route, so all collections come back at once.',
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async () =>
       run(async () => {
@@ -46,7 +47,7 @@ export function registerCollectionReadTools(
         'create/update/delete permissions. Use search_links with collection_id to ' +
         'get the links inside it.',
       inputSchema: z.object({ collection_id: collectionId }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ collection_id }) =>
       run(async () => {

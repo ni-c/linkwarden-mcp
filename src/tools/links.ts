@@ -20,6 +20,7 @@ import {
 } from '../shape.js';
 
 import type { LinkwardenApi } from '../api.js';
+import { READ_ONLY } from './annotations.js';
 import { jsonResult, run, textResult, untrustedResult } from '../result.js';
 
 /**
@@ -102,7 +103,7 @@ export function registerLinkReadTools(
         sort: linkSort,
         cursor,
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ query, collection_id, tag_id, pinned_only, sort, cursor: from }) =>
       run(async () => {
@@ -178,7 +179,7 @@ export function registerLinkReadTools(
         'formats exist. Does not include the archived page text — use ' +
         'get_link_content for that.',
       inputSchema: z.object({ link_id: linkId }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ link_id }) =>
       run(async () => {
@@ -221,7 +222,7 @@ export function registerLinkReadTools(
             `Maximum characters to return, default ${DEFAULT_CONTENT_CHARS}`
           ),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ link_id, offset, max_chars }) =>
       run(async () => {

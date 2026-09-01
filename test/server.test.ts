@@ -17,6 +17,27 @@ import {
  */
 
 /** Tools that must carry destructiveHint, because they lose data. */
+/**
+ * Tools that carry a confirmation, which is not the same list as the
+ * destructive ones and should not be conflated with it. `rename_tag` is
+ * annotated destructive and has no confirmation yet; publishing a collection
+ * is confirmed and destroys nothing. The annotation describes what a call
+ * does, the confirmation decides whether a person is asked first.
+ */
+const GUARDED_TOOLS = [
+  'delete_link',
+  'bulk_update_links',
+  'bulk_delete_links',
+  'represerve_link',
+  'delete_link_preservations',
+  'delete_collection',
+  'delete_tags',
+  'merge_tags',
+  'delete_rss_subscription',
+  'update_link',
+  'update_collection',
+];
+
 const DESTRUCTIVE_TOOLS = [
   'delete_link',
   'bulk_update_links',
@@ -27,6 +48,21 @@ const DESTRUCTIVE_TOOLS = [
   'delete_tags',
   'merge_tags',
   'delete_rss_subscription',
+  // Added with the annotation sweep: both replace something written with no
+  // way back — update_link discards the preserved copies when the URL
+  // changes, rename_tag replaces a name on every link that carries the tag.
+  'update_link',
+  'update_collection',
+  'rename_tag',
+];
+
+/** Writes that add or mark, and take nothing away. */
+const ADDITIVE_TOOLS = [
+  'create_link',
+  'create_collection',
+  'create_tags',
+  'create_rss_subscription',
+  'set_link_pinned',
 ];
 
 describe('tool surface', () => {
@@ -67,6 +103,46 @@ describe('tool surface', () => {
       expect(tool?.annotations?.destructiveHint, name).toBe(true);
       expect(tool?.annotations?.readOnlyHint, name).not.toBe(true);
     }
+    for (const name of ADDITIVE_TOOLS) {
+      const tool = tools.find((t) => t.name === name);
+      expect(tool?.annotations?.destructiveHint, name).toBe(false);
+    }
+  });
+
+  it('declares all four annotation hints on every tool', async () => {
+    // Not a style rule. Two of the four default to a *stronger* claim than
+    // silence suggests: the specification gives destructiveHint and
+    // openWorldHint a default of true, so a tool that omits them announces
+    // itself as destructive and open-world. Three tools here shipped
+    // `annotations: {}`, which is that claim in its emptiest form.
+    const client = await connectClient();
+    const tools = (await client.listTools()).tools;
+    const hints = [
+      'readOnlyHint',
+      'destructiveHint',
+      'idempotentHint',
+      'openWorldHint',
+    ] as const;
+    for (const tool of tools) {
+      for (const hint of hints) {
+        expect(typeof tool.annotations?.[hint], `${tool.name}.${hint}`).toBe(
+          'boolean'
+        );
+      }
+    }
+  });
+
+  it('calls only create_link open-world', async () => {
+    // The caller supplies the URL and Linkwarden fetches it, so the caller
+    // picks the address — the same boundary the SSRF guard watches. Every
+    // other tool talks to the one configured instance.
+    const client = await connectClient();
+    const tools = (await client.listTools()).tools;
+    for (const tool of tools) {
+      expect(tool.annotations?.openWorldHint, tool.name).toBe(
+        tool.name === 'create_link'
+      );
+    }
   });
 
   it('gives every tool a description that names its own tool', async () => {
@@ -80,7 +156,7 @@ describe('tool surface', () => {
   it('offers confirm_token on every destructive tool', async () => {
     const client = await connectClient();
     const tools = (await client.listTools()).tools;
-    for (const name of DESTRUCTIVE_TOOLS) {
+    for (const name of GUARDED_TOOLS) {
       const tool = tools.find((t) => t.name === name);
       // Optional all the way down: if the tool is missing entirely, this has to
       // fail on the assertion below rather than throw on the property access.

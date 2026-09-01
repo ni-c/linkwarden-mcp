@@ -146,7 +146,15 @@ export function registerLinkWriteTools(
           ),
         tags: tagNames.optional(),
       }),
-      annotations: {},
+      annotations: {
+        // Additive. Open-world: Linkwarden fetches the URL the caller gives
+        // it, so the caller picks the address — the same boundary the SSRF
+        // guard watches.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
     async ({ url, name, description, collection_id, collection_name, tags }) =>
       run(async () => {
@@ -211,7 +219,15 @@ export function registerLinkWriteTools(
           ),
         confirm_token: confirmToken,
       }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // Destructive because of the archive, not the bookmark: changing the
+        // URL discards every preserved copy and fetches the new page. A
+        // snapshot of a page that has since changed is not recoverable.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async (
       { link_id, name, url, description, collection_id, tags, confirm_token },
@@ -313,7 +329,13 @@ export function registerLinkWriteTools(
         link_id: linkId,
         pinned: z.boolean().describe('true to pin, false to unpin'),
       }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // A marker, not content.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ link_id, pinned }) =>
       run(async () => {
@@ -351,7 +373,14 @@ export function registerLinkWriteTools(
         'first call returns a confirmation token, the second call with that token ' +
         'performs the deletion.',
       inputSchema: z.object({ link_id: linkId, confirm_token: confirmToken }),
-      annotations: { destructiveHint: true },
+      annotations: {
+        // Idempotent by the specification's wording. The preserved copies go
+        // with it.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ link_id, confirm_token }, mcp) =>
       run(async () => {
@@ -421,7 +450,15 @@ export function registerLinkWriteTools(
           .describe('Move every link to this collection (owner only)'),
         confirm_token: confirmToken,
       }),
-      annotations: { destructiveHint: true },
+      annotations: {
+        // Replaces tags across many links at once, and `replace_tags` can
+        // strip every tag from all of them. The previous tags are not
+        // recoverable from here.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async (
       { link_ids, tags, replace_tags, collection_id, confirm_token },
@@ -509,7 +546,13 @@ export function registerLinkWriteTools(
           .describe(`Link ids, at most ${MAX_BULK_LINKS}`),
         confirm_token: confirmToken,
       }),
-      annotations: { destructiveHint: true },
+      annotations: {
+        // Idempotent by the specification's wording.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ link_ids, confirm_token }, mcp) =>
       run(async () => {
@@ -560,7 +603,15 @@ export function registerLinkWriteTools(
         'them. That is why it needs a confirmation token.\n\n' +
         'The work happens in a background worker; get_worker_stats shows the queue.',
       inputSchema: z.object({ link_id: linkId, confirm_token: confirmToken }),
-      annotations: { destructiveHint: true },
+      annotations: {
+        // Discards the existing copies before fetching the page again, and
+        // the new archive may differ from what was stored. Not idempotent:
+        // each run makes a fresh snapshot of a page that keeps changing.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({ link_id, confirm_token }, mcp) =>
       run(async () => {
@@ -616,7 +667,13 @@ export function registerLinkWriteTools(
           .describe(`Link ids, at most ${MAX_BULK_LINKS}`),
         confirm_token: confirmToken,
       }),
-      annotations: { destructiveHint: true },
+      annotations: {
+        // The bookmarks stay; what they preserved does not.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ link_ids, confirm_token }, mcp) =>
       run(async () => {

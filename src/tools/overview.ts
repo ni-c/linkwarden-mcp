@@ -9,6 +9,7 @@ import {
 import { z } from 'zod';
 
 import type { LinkwardenApi } from '../api.js';
+import { READ_ONLY } from './annotations.js';
 import { jsonResult, run } from '../result.js';
 
 interface RawUser {
@@ -47,7 +48,7 @@ export function registerOverviewReadTools(
         'before creating links, because the defaults decide what get_link_content ' +
         'will later have to read.',
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async () =>
       run(async () => {
@@ -82,7 +83,7 @@ export function registerOverviewReadTools(
         'A quick "what is going on here" overview — use search_links for anything ' +
         'targeted.',
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async () =>
       run(async () => {
@@ -105,7 +106,7 @@ export function registerOverviewReadTools(
         'Lists the RSS feeds this account subscribes to. Linkwarden polls them and ' +
         'files new entries as links in the configured collection.',
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async () =>
       run(async () => {
@@ -130,7 +131,7 @@ export function registerOverviewReadTools(
         'by default); every other account gets HTTP 403 here. The counts cover the ' +
         'whole instance, not just this account.',
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async () =>
       run(async () => {

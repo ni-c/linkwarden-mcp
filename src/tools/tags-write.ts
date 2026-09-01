@@ -65,7 +65,14 @@ export function registerTagWriteTools(
         ),
         ai_tag: archivalFlag('Let the configured AI model assign this tag'),
       }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // Additive, and get-or-create: asking for a tag that exists returns
+        // it rather than making a second.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({
       names,
@@ -119,7 +126,14 @@ export function registerTagWriteTools(
         tag_id: tagId,
         name: z.string().trim().min(1).max(50).describe('New tag name'),
       }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // Replaces a name somebody chose, on every link that carries the tag.
+        // wikijs guards update_tag for the same reason.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ tag_id, name }) =>
       run(async () => {
@@ -145,7 +159,13 @@ export function registerTagWriteTools(
           .describe(`Tag ids, at most ${MAX_TAGS_PER_CALL}`),
         confirm_token: confirmToken,
       }),
-      annotations: { destructiveHint: true },
+      annotations: {
+        // Removed from every link that carried them; the links stay.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ tag_ids, confirm_token }, mcp) =>
       run(async () => {
@@ -211,7 +231,15 @@ export function registerTagWriteTools(
           .describe('Name of the new tag. Must not exist yet.'),
         confirm_token: confirmToken,
       }),
-      annotations: { destructiveHint: true },
+      annotations: {
+        // The originals are deleted and their per-tag archival settings are
+        // not carried over. Not idempotent — the sources no longer exist for
+        // a second run.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({ tag_ids, new_name, confirm_token }, mcp) =>
       run(async () => {

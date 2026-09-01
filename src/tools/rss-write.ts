@@ -65,7 +65,13 @@ export function registerRssWriteTools(
             'Collection by name; it is created if it does not exist. Mutually exclusive with collection_id.'
           ),
       }),
-      annotations: {},
+      annotations: {
+        // Additive.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({ name, url, collection_id, collection_name }) =>
       run(async () => {
@@ -107,7 +113,13 @@ export function registerRssWriteTools(
         rss_subscription_id: rssSubscriptionId,
         confirm_token: confirmToken,
       }),
-      annotations: { destructiveHint: true },
+      annotations: {
+        // Items already imported stay; nothing further is fetched.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ rss_subscription_id, confirm_token }, mcp) =>
       run(async () => {

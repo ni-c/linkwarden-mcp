@@ -16,6 +16,7 @@ import {
 } from '../shape.js';
 
 import type { LinkwardenApi } from '../api.js';
+import { READ_ONLY } from './annotations.js';
 import { jsonResult, run } from '../result.js';
 
 /** Defensive cap; the instance itself pages at PAGINATION_TAKE_COUNT. */
@@ -43,7 +44,7 @@ export function registerTagReadTools(
         sort: tagSort,
         cursor,
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ search, sort, cursor: from }) =>
       run(async () => {
@@ -82,7 +83,7 @@ export function registerTagReadTools(
         'Fetches one tag with its archival settings. Use search_links with tag_id ' +
         'to get the links carrying it.',
       inputSchema: z.object({ tag_id: tagId }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     async ({ tag_id }) =>
       run(async () => {

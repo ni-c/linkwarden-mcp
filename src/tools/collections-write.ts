@@ -67,7 +67,13 @@ export function registerCollectionWriteTools(
           .optional()
           .describe('Accent colour as a hex value, e.g. #0ea5e9'),
       }),
-      annotations: {},
+      annotations: {
+        // Additive. Two calls leave two collections.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({ name, description, parent_id, color }) =>
       run(async () => {
@@ -119,7 +125,15 @@ export function registerCollectionWriteTools(
         color: z.string().trim().max(50).optional(),
         confirm_token: confirmToken,
       }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // Replaces a name and description somebody typed. It is also the tool
+        // that can publish a collection, which is guarded — that risk is
+        // disclosure, not destruction, and no annotation carries it.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async (
       {
@@ -248,7 +262,15 @@ export function registerCollectionWriteTools(
         collection_id: collectionId,
         confirm_token: confirmToken,
       }),
-      annotations: { destructiveHint: true },
+      annotations: {
+        // Idempotent by the specification's wording — the second call fails,
+        // but the world is the same either way. It takes the links, their
+        // preserved copies and every sub-collection with it.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     async ({ collection_id, confirm_token }, mcp) =>
       run(async () => {

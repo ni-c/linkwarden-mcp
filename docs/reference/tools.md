@@ -149,7 +149,7 @@ Saves a bookmark. Linkwarden fetches the page title itself when no name is given
 
 ### `update_link`
 
-**Update a link** — write, **essential**
+**Update a link** — write, destructive, **essential**
 
 Changes a bookmark. Fields that are not given stay as they are: the tool reads the link first and merges, because the underlying route replaces the whole record and would otherwise clear the title, description and every tag. The tags argument REPLACES the tag list — pass the full set you want. Moving a link to another collection only works for the collection owner. Changing the URL is destructive and needs a confirmation token: Linkwarden deletes every preserved copy of the old page (screenshot, PDF, readable text, single-file HTML) and starts over.
 
@@ -247,7 +247,7 @@ Creates a collection. Pass parent_id to nest it under an existing collection. Ne
 
 ### `update_collection`
 
-**Update a collection** — write
+**Update a collection** — write, destructive
 
 Changes a collection. Fields that are not given stay as they are: the tool reads the collection first and merges, because the underlying route rebuilds the member list from the request body and would otherwise remove every collaborator. Only the owner of a collection may update it. To move a collection to the top level pass parent_id=0 — Linkwarden needs an explicit marker for that and ignores null. Setting is_public=true needs a confirmation token: it makes the collection and every link in it readable by anyone who has the URL, without logging in.
 
@@ -290,7 +290,7 @@ Creates tags, or updates the ones that already exist — the underlying route is
 
 ### `rename_tag`
 
-**Rename a tag** — write
+**Rename a tag** — write, destructive
 
 Renames a tag; every link carrying it keeps it. Tag names are unique per account, so renaming a tag to a name that already exists fails — use merge_tags to fold two tags into one instead.
 
