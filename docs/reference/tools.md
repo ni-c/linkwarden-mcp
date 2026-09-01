@@ -281,12 +281,12 @@ Creates tags, or updates the ones that already exist — the underlying route is
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `names` | string[] | yes | Tag names, at most 50. Existing tags are updated rather than duplicated. |
-| `archive_as_screenshot` | unknown | no | Store a screenshot for links carrying this tag. null inherits the account default. |
-| `archive_as_pdf` | unknown | no | Store a PDF for links carrying this tag. null inherits the account default. |
-| `archive_as_readable` | unknown | no | Store the readable article text (this is what get_link_content reads) for links carrying this tag. null inherits the account default. |
-| `archive_as_monolith` | unknown | no | Store a single-file HTML copy for links carrying this tag. null inherits the account default. |
-| `archive_as_wayback_machine` | unknown | no | Submit the URL to the Internet Archive for links carrying this tag. null inherits the account default. |
-| `ai_tag` | unknown | no | Let the configured AI model assign this tag for links carrying this tag. null inherits the account default. |
+| `archive_as_screenshot` | boolean,null | no | Store a screenshot for links carrying this tag. null inherits the account default. |
+| `archive_as_pdf` | boolean,null | no | Store a PDF for links carrying this tag. null inherits the account default. |
+| `archive_as_readable` | boolean,null | no | Store the readable article text (this is what get_link_content reads) for links carrying this tag. null inherits the account default. |
+| `archive_as_monolith` | boolean,null | no | Store a single-file HTML copy for links carrying this tag. null inherits the account default. |
+| `archive_as_wayback_machine` | boolean,null | no | Submit the URL to the Internet Archive for links carrying this tag. null inherits the account default. |
+| `ai_tag` | boolean,null | no | Let the configured AI model assign this tag for links carrying this tag. null inherits the account default. |
 
 ### `rename_tag`
 
