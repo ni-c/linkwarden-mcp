@@ -1,10 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import {
-  confirmationPrompt,
-  setResourceKey,
-  type ConfirmationStore,
-} from '../confirm.js';
+import { setResourceKey } from 'mcp-approval';
+import type { Approver, ConfirmationStore } from 'mcp-approval';
 import {
   assertNotErrorMessage,
   errorResult,
@@ -34,7 +31,8 @@ const archivalFlag = (what: string) =>
 export function registerTagWriteTools(
   server: McpServer,
   api: LinkwardenApi,
-  confirmations: ConfirmationStore
+  confirmations: ConfirmationStore,
+  approval: Approver
 ): void {
   server.registerTool(
     'create_tags',
@@ -149,28 +147,37 @@ export function registerTagWriteTools(
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ tag_ids, confirm_token }) =>
+    async ({ tag_ids, confirm_token }, mcp) =>
       run(async () => {
         const ids = [...new Set(tag_ids)];
         const resource = setResourceKey('delete_tags', ids.map(String));
 
-        if (!confirmations.consume(resource, confirm_token)) {
-          if (confirm_token !== undefined) {
-            return errorResult(
-              'The confirmation token is invalid, expired, or was issued for a ' +
-                'different set of tags. Call delete_tags without a token to get a new one.'
-            );
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `permanently delete ${ids.length} tag(s) (ids ${ids.join(', ')}) and remove them from every link`,
+            consequence:
+              'The tags are removed from every link that carried them, and that association is not recoverable from here.',
+            fallbackNote:
+              '\nCall list_tags first if you need to know how many links each one affects.',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'delete_tags',
+            hint: 'Tick to go ahead, leave it to cancel.',
           }
-          const token = confirmations.issue(resource);
-          return textResult(
-            confirmationPrompt(
-              `permanently delete ${ids.length} tag(s) (ids ${ids.join(', ')}) and remove them from every link`,
-              token,
-              confirmations.ttlMinutes
-            ) +
-              '\nCall list_tags first if you need to know how many links each one affects.'
-          );
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
         }
+        if (outcome.decision === 'declined') {
+          return errorResult(`The user declined. delete_tags did nothing.`);
+        }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const result = await api.delete('/tags', { tagIds: ids });
         assertNotErrorMessage(result, 'Deleting the tags');
@@ -206,7 +213,7 @@ export function registerTagWriteTools(
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ tag_ids, new_name, confirm_token }) =>
+    async ({ tag_ids, new_name, confirm_token }, mcp) =>
       run(async () => {
         const ids = [...new Set(tag_ids)];
         // The target name is part of the key: a confirmation for merging into one
@@ -216,23 +223,31 @@ export function registerTagWriteTools(
           ids.map(String)
         );
 
-        if (!confirmations.consume(resource, confirm_token)) {
-          if (confirm_token !== undefined) {
-            return errorResult(
-              'The confirmation token is invalid, expired, or was issued for a ' +
-                'different set of tags or a different target name. Call merge_tags ' +
-                'without a token to get a new one.'
-            );
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `merge ${ids.length} tag(s) (ids ${ids.join(', ')}) into one new tag, deleting the originals and losing their archival settings`,
+            consequence:
+              'The original tags are deleted and their per-tag archival ' +
+              'settings are not carried over; neither can be restored from here.',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'merge_tags',
+            hint: 'Tick to go ahead, leave it to cancel.',
           }
-          const token = confirmations.issue(resource);
-          return textResult(
-            confirmationPrompt(
-              `merge ${ids.length} tag(s) (ids ${ids.join(', ')}) into one new tag, deleting the originals and losing their archival settings`,
-              token,
-              confirmations.ttlMinutes
-            )
-          );
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
         }
+        if (outcome.decision === 'declined') {
+          return errorResult(`The user declined. merge_tags did nothing.`);
+        }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const result = await api.put('/tags/merge', {
           tagIds: ids,

@@ -1,11 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import {
-  confirmationPrompt,
-  setResourceKey,
-  type ConfirmationStore,
-} from '../confirm.js';
+import { setResourceKey } from 'mcp-approval';
+import type { Approver, ConfirmationStore } from 'mcp-approval';
 import {
   assertNotErrorMessage,
   errorResult,
@@ -46,7 +43,8 @@ interface CollectionUpdateBody {
 export function registerCollectionWriteTools(
   server: McpServer,
   api: LinkwardenApi,
-  confirmations: ConfirmationStore
+  confirmations: ConfirmationStore,
+  approval: Approver
 ): void {
   server.registerTool(
     'create_collection',
@@ -123,15 +121,18 @@ export function registerCollectionWriteTools(
       }),
       annotations: { idempotentHint: true },
     },
-    async ({
-      collection_id,
-      name,
-      description,
-      parent_id,
-      is_public,
-      color,
-      confirm_token,
-    }) =>
+    async (
+      {
+        collection_id,
+        name,
+        description,
+        parent_id,
+        is_public,
+        color,
+        confirm_token,
+      },
+      mcp
+    ) =>
       run(async () => {
         const current = (await api.get(
           idPath('/collections', collection_id)
@@ -164,24 +165,33 @@ export function registerCollectionWriteTools(
             .digest('hex')
             .slice(0, 16);
           const resource = `update_collection:${collection_id}:publish:${effect}`;
-          if (!confirmations.consume(resource, confirm_token)) {
-            if (confirm_token !== undefined) {
-              return errorResult(
-                'The confirmation token is invalid, expired, or was issued for a ' +
-                  'different change. Call update_collection without a token to get a new one.'
-              );
-            }
-            const token = confirmations.issue(resource);
-            return textResult(
-              `This will publish collection ${collection_id} and the ${String(
+          const outcome = await approval.requestApproval(
+            server,
+            mcp,
+            confirmations,
+            {
+              what: `publish collection ${collection_id} and the ${String(
                 current._count?.links ?? 'unknown number of'
-              )} link(s) in it: anyone with the URL can then read them without ` +
-                'logging in, and search engines may index them. Publishing cannot ' +
-                'un-publish what has already been copied.\n\n' +
-                `To proceed, call this tool again with confirm_token="${token}".\n` +
-                `The token is valid for ${confirmations.ttlMinutes} minutes and can be used once.`
+              )} link(s) in it`,
+              consequence:
+                'Anyone with the URL can then read them without logging in, and search ' +
+                'engines may index them. Publishing cannot un-publish what has already ' +
+                'been copied.',
+              resourceKey: resource,
+              token: confirm_token,
+              toolName: 'update_collection',
+              title: 'Publish this collection?',
+              hint: 'Tick to go ahead, leave it to cancel.',
+            }
+          );
+          if (outcome.decision === 'rejected')
+            return errorResult(outcome.reason);
+          if (outcome.decision === 'declined') {
+            return errorResult(
+              `The user declined. update_collection did nothing.`
             );
           }
+          if (outcome.decision === 'pending') return outcome.result;
         }
 
         const body: CollectionUpdateBody = {
@@ -240,42 +250,48 @@ export function registerCollectionWriteTools(
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ collection_id, confirm_token }) =>
+    async ({ collection_id, confirm_token }, mcp) =>
       run(async () => {
         const resource = setResourceKey('delete_collection', [
           String(collection_id),
         ]);
-        if (!confirmations.consume(resource, confirm_token)) {
-          if (confirm_token !== undefined) {
-            return errorResult(
-              'The confirmation token is invalid, expired, or was issued for a ' +
-                'different collection. Call delete_collection without a token to get a new one.'
-            );
-          }
-          const current = (await api.get(
-            idPath('/collections', collection_id)
-          )) as RawCollection | null;
-          if (current === null || current.id === undefined) {
-            throw new Error(
-              `collection ${collection_id} does not exist or is not accessible`
-            );
-          }
-          const token = confirmations.issue(resource);
-          // Counts and flags only — the collection name is user-supplied text.
-          return textResult(
-            confirmationPrompt(
+        const current = (await api.get(
+          idPath('/collections', collection_id)
+        )) as RawCollection | null;
+        if (current === null || current.id === undefined) {
+          throw new Error(
+            `collection ${collection_id} does not exist or is not accessible`
+          );
+        }
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what:
               `permanently delete collection ${collection_id} together with its ${String(
                 current._count?.links ?? 'unknown number of'
               )} link(s), their preserved copies and all sub-collections` +
-                (current.members !== undefined && current.members.length > 0
-                  ? `, which ${current.members.length} other member(s) also have access to`
-                  : ''),
-              token,
-              confirmations.ttlMinutes
-            ) +
-              '\nThe collection name is withheld on purpose: it is user-supplied text.'
+              (current.members !== undefined && current.members.length > 0
+                ? `, which ${current.members.length} other member(s) also have access to`
+                : ''),
+            consequence: 'None of it can be restored from here.',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'delete_collection',
+            title: 'Delete this collection?',
+            hint: 'Tick to go ahead, leave it to cancel.',
+            fallbackNote:
+              'The collection name is withheld on purpose: it is user-supplied text.',
+          }
+        );
+        if (outcome.decision === 'rejected') return errorResult(outcome.reason);
+        if (outcome.decision === 'declined') {
+          return errorResult(
+            `The user declined. delete_collection did nothing.`
           );
         }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const deleted = await api.delete(idPath('/collections', collection_id));
         assertNotErrorMessage(deleted, 'Deleting the collection');

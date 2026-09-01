@@ -1,10 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import {
-  confirmationPrompt,
-  setResourceKey,
-  type ConfirmationStore,
-} from '../confirm.js';
+import { setResourceKey } from 'mcp-approval';
+import type { Approver, ConfirmationStore } from 'mcp-approval';
 import {
   assertNotErrorMessage,
   errorResult,
@@ -27,7 +24,8 @@ import { shapeRssSubscription, type RawRssSubscription } from '../shape.js';
 export function registerRssWriteTools(
   server: McpServer,
   api: LinkwardenApi,
-  confirmations: ConfirmationStore
+  confirmations: ConfirmationStore,
+  approval: Approver
 ): void {
   server.registerTool(
     'create_rss_subscription',
@@ -111,28 +109,37 @@ export function registerRssWriteTools(
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ rss_subscription_id, confirm_token }) =>
+    async ({ rss_subscription_id, confirm_token }, mcp) =>
       run(async () => {
         const resource = setResourceKey('delete_rss_subscription', [
           String(rss_subscription_id),
         ]);
-        if (!confirmations.consume(resource, confirm_token)) {
-          if (confirm_token !== undefined) {
-            return errorResult(
-              'The confirmation token is invalid, expired, or was issued for a ' +
-                'different subscription. Call delete_rss_subscription without a ' +
-                'token to get a new one.'
-            );
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `delete RSS subscription ${rss_subscription_id}, so its feed is no longer polled`,
+            consequence:
+              'Items already imported stay; nothing further is fetched from that feed.',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'delete_rss_subscription',
+            hint: 'Tick to go ahead, leave it to cancel.',
           }
-          const token = confirmations.issue(resource);
-          return textResult(
-            confirmationPrompt(
-              `delete RSS subscription ${rss_subscription_id}, so its feed is no longer polled`,
-              token,
-              confirmations.ttlMinutes
-            )
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
+        }
+        if (outcome.decision === 'declined') {
+          return errorResult(
+            `The user declined. delete_rss_subscription did nothing.`
           );
         }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const deleted = await api.delete(idPath('/rss', rss_subscription_id));
         assertNotErrorMessage(deleted, 'Deleting the RSS subscription');

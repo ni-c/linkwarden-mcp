@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ConfirmationStore, setResourceKey } from '../src/confirm.js';
+import { ConfirmationStore, setResourceKey } from 'mcp-approval';
 import {
   assertNotErrorMessage,
   jsonResult,

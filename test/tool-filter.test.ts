@@ -8,7 +8,7 @@ import {
 
 import type { Config } from '../src/config.js';
 import { createServer } from '../src/server.js';
-import { ToolFilterError } from '../src/tool-filter.js';
+import { ToolFilterError } from 'mcp-tool-allowlist';
 import { config, connectClient, stubFetchRejecting } from './helpers.js';
 
 /** The tools a server built with this configuration actually offers. */
@@ -100,19 +100,6 @@ describe('selecting tools', () => {
     );
   });
 
-  it('trims entries, ignores case and skips empty ones', async () => {
-    expect(
-      await toolNames({ allowTools: ' SEARCH_LINKS ,, get_link, ' })
-    ).toEqual(['get_link', 'search_links']);
-  });
-
-  it('treats an empty value as no filter at all', async () => {
-    // `LINKWARDEN_ALLOW_TOOLS=` in a compose file must not mean "allow nothing".
-    expect(await toolNames({ allowTools: '   ' })).toEqual(
-      [...ALL_TOOLS].sort()
-    );
-  });
-
   it('leaves an unconfigured server untouched', async () => {
     expect(await toolNames()).toEqual([...ALL_TOOLS].sort());
   });
@@ -147,21 +134,6 @@ describe('refusing an unusable list', () => {
     );
     expect(() => build({ allowTools: 'search_linkz' })).toThrow(
       /no tool matches "search_linkz".*search_links/s
-    );
-  });
-
-  it('rejects a pattern that matches nothing', () => {
-    expect(() => build({ allowTools: 'lst_*' })).toThrow(
-      /no tool matches "lst_\*"/
-    );
-  });
-
-  it('rejects a pattern with the star anywhere but last', () => {
-    expect(() => build({ allowTools: '*_link' })).toThrow(
-      /single trailing "\*"/
-    );
-    expect(() => build({ allowTools: 'list_*_x' })).toThrow(
-      /single trailing "\*"/
     );
   });
 
@@ -225,7 +197,7 @@ describe('together with read-only mode', () => {
     // not "your lists leave no tools".
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     expect(() => build({ ...readOnly, allowTools: 'create_*' })).toThrow(
-      /only write tools, but LINKWARDEN_READ_ONLY is set/
+      /read-only mode suppresses.*LINKWARDEN_READ_ONLY is set/s
     );
   });
 

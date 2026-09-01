@@ -225,7 +225,7 @@ describe('update_link merges instead of replacing', () => {
       },
     });
     expect(second.isError).toBe(true);
-    expect(resultText(second)).toMatch(/different change/);
+    expect(resultText(second)).toMatch(/issued for different arguments/);
   });
 });
 
@@ -260,6 +260,86 @@ describe('set_link_pinned', () => {
     });
 
     expect(requestBody(calls[2]!).pinnedBy).toEqual([{}]);
+  });
+});
+
+describe('asking the user', () => {
+  // One accept case proves the path; a decline per guarded tool proves each of
+  // them acts on the answer rather than falling through. They differ only in
+  // arguments, so the declines are a table.
+
+  it('asks, and deletes the link once they accept', async () => {
+    const calls = stubFetch(() => envelopeResponse(linkFixture()));
+    const client = await connectClient({}, 'accept');
+    const result = await client.callTool({
+      name: 'delete_link',
+      arguments: { link_id: 42 },
+    });
+    expect(client.prompts).toHaveLength(1);
+    expect(result.isError).toBeFalsy();
+    expect(calls.filter((c) => c.init?.method === 'DELETE')).toHaveLength(1);
+  });
+
+  it('deletes nothing when the user closes the dialog', async () => {
+    // Cancel is not a yes: for an irreversible delete the only safe reading of
+    // "no answer" is no.
+    const calls = stubFetch(() => envelopeResponse(linkFixture()));
+    const client = await connectClient({}, 'cancel');
+    const result = await client.callTool({
+      name: 'delete_link',
+      arguments: { link_id: 42 },
+    });
+    expect(result.isError).toBe(true);
+    expect(calls.filter((c) => c.init?.method === 'DELETE')).toHaveLength(0);
+  });
+
+  it('offers no token to a client it can ask properly', async () => {
+    // The control that makes the rest mean something: the token path is
+    // unchanged, so a server that silently never asked would still pass every
+    // other confirmation test in this file.
+    stubFetch(() => envelopeResponse(linkFixture()));
+    const client = await connectClient({}, 'decline');
+    const result = await client.callTool({
+      name: 'delete_link',
+      arguments: { link_id: 42 },
+    });
+    expect(resultText(result)).not.toMatch(/confirm_token/);
+  });
+
+  it.each([
+    ['delete_link', { link_id: 42 }],
+    ['bulk_delete_links', { link_ids: [1, 2] }],
+    ['represerve_link', { link_id: 42 }],
+    ['delete_link_preservations', { link_ids: [1, 2] }],
+    [
+      'bulk_update_links',
+      { link_ids: [1, 2], tags: ['a'], replace_tags: false },
+    ],
+    ['update_link', { link_id: 42, url: 'https://example.test/other' }],
+    ['delete_collection', { collection_id: 7 }],
+    ['delete_tags', { tag_ids: [3] }],
+    ['merge_tags', { tag_ids: [3, 4], new_name: 'merged' }],
+    ['delete_rss_subscription', { rss_subscription_id: 5 }],
+  ])('%s does nothing when the user declines', async (name, args) => {
+    const calls = stubFetch(() =>
+      envelopeResponse({
+        ...linkFixture(),
+        ...collectionFixture(),
+        ...tagFixture(),
+      })
+    );
+    const client = await connectClient({}, 'decline');
+    const result = await client.callTool({
+      name,
+      arguments: args as Record<string, unknown>,
+    });
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toMatch(/declined/);
+    expect(
+      calls.filter((c) =>
+        ['POST', 'PUT', 'DELETE'].includes(c.init?.method ?? '')
+      )
+    ).toHaveLength(0);
   });
 });
 
