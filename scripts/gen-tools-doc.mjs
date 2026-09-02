@@ -165,6 +165,13 @@ function render(tools) {
     'are deliberately not the same one: `create_link` writes and is not asked',
     'about, `update_collection` is asked about only when it *publishes*.',
     '',
+    'Every tool declares an `outputSchema` and answers with `structuredContent` beside',
+    'the text block, so a client can use a result without parsing prose. The reading',
+    'tools carry `untrusted: true` and `source: "linkwarden"` as fields of that',
+    'object — the note in `notes` is prose a client can read but not check. The write',
+    'tools are without it: they report an id this server was given and a count it',
+    'made.',
+    '',
     '## Read tools',
     '',
   ];

@@ -10,13 +10,6 @@ All 28 tools: 11 read, 17 write.
 With `LINKWARDEN_READ_ONLY=true` the write tools are not registered at all —
 they do not appear in `tools/list`.
 
-Every tool declares an `outputSchema` and answers with `structuredContent` beside
-the text block, so a client can use a result without parsing prose. The reading
-tools carry `untrusted: true` and `source: "linkwarden"` as fields of that
-object — the note in `notes` is prose a client can read but not check. The write
-tools are without it: they report an id this server was given and a count it
-made.
-
 All 28 are registered unless you say otherwise. `LINKWARDEN_ALLOW_TOOLS`
 and `LINKWARDEN_DENY_TOOLS` narrow the list to the ones you want, and
 `LINKWARDEN_ALLOW_TOOLS=essential` selects the 8 marked **essential**
@@ -34,6 +27,13 @@ Every tool declares all four MCP annotations — `readOnlyHint`,
 client may ignore; the dialog is enforced here and cannot be. The two lists
 are deliberately not the same one: `create_link` writes and is not asked
 about, `update_collection` is asked about only when it *publishes*.
+
+Every tool declares an `outputSchema` and answers with `structuredContent` beside
+the text block, so a client can use a result without parsing prose. The reading
+tools carry `untrusted: true` and `source: "linkwarden"` as fields of that
+object — the note in `notes` is prose a client can read but not check. The write
+tools are without it: they report an id this server was given and a count it
+made.
 
 ## Read tools
 
