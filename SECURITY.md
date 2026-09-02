@@ -98,7 +98,9 @@ Four things this does not cover, and cannot:
   the URL either came through this server and was checked then, or it came from
   Linkwarden itself, where this server has no say. On an instance whose stored links
   predate this guard, that does mean it can refresh a stale internal read rather than
-  merely re-expose an old one.
+  merely re-expose an old one. Its confirmation dialog therefore names the **host**
+  the re-archive will fetch — only the host, since the path and the title are prose
+  from a foreign page.
 
 Finally, the check itself makes a DNS query from the machine running this server for
 every hostname a caller supplies — before any request reaches Linkwarden. That is a
@@ -108,3 +110,25 @@ runs the resolver.
 Where Linkwarden itself sits on the network is the boundary that actually holds. If it
 runs somewhere that can reach a metadata service or an unauthenticated admin port, put
 that out of its reach there rather than relying on this check.
+
+## What the confirmation proves
+
+Both confirmation paths bind an answer to **one operation with one set of arguments**:
+the two-call `confirm_token` through a one-use entry in the store, the elicitation reply
+through a sealed (HMAC) `requestState` carrying the resource key. Neither proves the
+answer is _recent_. A sealed state that opens onto an operation opens onto it whenever
+it is replayed.
+
+No replay defence is built, because in this deployment shape there is nothing to replay:
+
+- The sealing key is 32 random bytes per process, and this is a stdio server spawned per
+  session, so a state sealed in one session cannot be opened in the next.
+- `requestState` only crosses the wire on protocol revision `2026-07-28`. This server
+  does not set `supportedProtocolVersions`, so it takes the SDK's default list, which
+  ends at `2025-11-25`; on that revision the SDK bridges the elicitation server-side and
+  the value never leaves the process.
+- The `confirm_token` path is single-use and expires after five minutes.
+
+If any of those changes — a negotiated `2026-07-28`, or two processes serving the two
+halves of one flow with a shared key — a nonce becomes necessary. The approvals worth
+stealing here are `delete_link`, `bulk_delete_links` and `delete_collection`.

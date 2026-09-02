@@ -133,17 +133,37 @@ describe('tool surface', () => {
     }
   });
 
-  it('calls only create_link open-world', async () => {
+  it('calls exactly the URL-taking tools open-world', async () => {
     // The caller supplies the URL and Linkwarden fetches it, so the caller
     // picks the address — the same boundary the SSRF guard watches. Every
     // other tool talks to the one configured instance.
+    //
+    // Written as the whole set, and the set is the one `test/ssrf.test.ts`
+    // derives from the schemas: the tools with a URL parameter and the
+    // open-world tools have to be the same three. This assertion used to read
+    // `tool.name === 'create_link'`, which pinned the bug — `update_link` and
+    // `create_rss_subscription` take a URL too, and the second one is the
+    // broader path to the same fetch, since Linkwarden pulls the feed and
+    // archives a link per entry.
+    const openWorld = new Set([
+      'create_link',
+      'update_link',
+      'create_rss_subscription',
+    ]);
     const client = await connect();
     const tools = (await client.listTools()).tools;
     for (const tool of tools) {
       expect(tool.annotations?.openWorldHint, tool.name).toBe(
-        tool.name === 'create_link'
+        openWorld.has(tool.name)
       );
     }
+    // The set is not a hand-kept list: it is the tools whose schema declares a
+    // URL, so adding one without its annotation fails here.
+    const withUrl = tools
+      .filter((tool) => 'url' in (tool.inputSchema.properties ?? {}))
+      .map((tool) => tool.name)
+      .sort();
+    expect(withUrl).toEqual([...openWorld].sort());
   });
 
   it('gives every tool a description that names its own tool', async () => {

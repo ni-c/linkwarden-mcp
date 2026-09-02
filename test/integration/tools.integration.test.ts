@@ -258,6 +258,9 @@ describe('RSS', () => {
     // This server's own SSRF guard, against a real instance rather than a
     // stubbed fetch: a subscription is a URL handed to Linkwarden, which then
     // fetches it from inside the network the instance sits on.
+    // Naming the reason rather than passing a bare `true`: `expectError: true`
+    // is also satisfied by a schema rejection, so a renamed argument would keep
+    // this green while the SSRF guard it is about is never reached.
     await asking.call(
       'create_rss_subscription',
       {
@@ -265,7 +268,7 @@ describe('RSS', () => {
         url: 'http://127.0.0.1:3010/api/v1/users',
         collection_id: collectionId,
       },
-      { expectError: true }
+      { expectError: /refusing to point Linkwarden at 127\.0\.0\.1/ }
     );
   });
 
@@ -276,16 +279,15 @@ describe('RSS', () => {
     // the fixture feed served next to it on the compose network is exactly
     // what it will not accept. A public feed would work and is precisely what
     // this suite must not depend on.
-    const refused = await asking.call(
+    await asking.call(
       'create_rss_subscription',
       {
         name: 'Integration Subscription',
         url: FEED,
         collection_id: collectionId,
       },
-      { expectError: true }
+      { expectError: 'blocked internal hostname' }
     );
-    expect(refused).toContain('blocked internal hostname');
   });
 });
 

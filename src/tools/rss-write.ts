@@ -75,10 +75,16 @@ export function registerRssWriteTools(
       }),
       annotations: {
         // Additive.
+        //
+        // Open-world for `create_link`'s reason: the caller picks the address
+        // and Linkwarden fetches it. The broader one of the two, in fact —
+        // Linkwarden pulls the feed immediately and then creates *and
+        // archives* a link for every `<item><link>` in it, so one approved
+        // address becomes an unbounded set of fetches this server never sees.
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
-        openWorldHint: false,
+        openWorldHint: true,
       },
     },
     async ({ name, url, collection_id, collection_name }) =>

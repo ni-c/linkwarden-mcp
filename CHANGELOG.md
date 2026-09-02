@@ -12,6 +12,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`update_link` and `create_rss_subscription` are `openWorldHint: true`.**
+  Both hand Linkwarden an address the caller chose and have it fetch that page,
+  which is the one thing `create_link` was called open-world for. They said
+  `false` on the reading that their usual call fetches nothing — but that is a
+  property of a call and an annotation is a property of a tool, and the point of
+  the hint is that a host can gate or sandbox such a tool _before_ it sees the
+  arguments. `create_rss_subscription` is the broader of the two: Linkwarden
+  pulls the feed at once and then creates and archives a link for every entry.
+
+  The test that pinned this asserted `tool.name === 'create_link'`; it now
+  compares the open-world set against the set of tools whose schema declares a
+  `url`, so the two cannot drift apart again.
+
+- **The `represerve_link` dialog names the host.** A stored link can point at
+  `http://10.0.0.1/status` — it may have arrived through the web UI, an import
+  or a subscribed feed, none of which this server saw — and re-archiving is a
+  fresh outbound fetch of it. `get_link_content` actively steers a model there
+  ("call `represerve_link` to have Linkwarden archive the page again"), and the
+  question was "delete the preserved copies of link 42 and archive the page
+  again", with no way to tell that apart from re-archiving a public page.
+
+  Only the host, on the labelled "supplied by the caller" line. `delete_link`
+  withholds the title and the URL on purpose and still does: page prose does not
+  belong in front of a person. The host is the part the answer turns on.
+
+- **`rename_tag`'s confirmation key labels its targets.** `setResourceKey` sorts
+  its target list, and `String(tag_id)` erased the difference between an id and
+  a name — so `{tag_id: 7, name: "12"}` and `{tag_id: 12, name: "7"}` produced
+  the same fingerprint, one approval covering two different renames. Both pass
+  the schema: a tag called "12" is legal and year or issue-number tags are
+  ordinary. The targets are now `tag:<id>` and `name:<name>`.
+
+### Fixed
+
+- **An oversized field no longer cuts the result mid-string.** `untrustedResult`
+  capped by slicing the serialized JSON. Readability copies
+  `<meta name="description">` into `excerpt`, so a page the caller never chose
+  to trust could put 260 kB there — and none of the six metadata fields
+  `get_link_content` returns was clamped on that path. The answer was 200 kB of
+  attacker-chosen text, no article, no `notes` and no `offset`, in JSON that no
+  longer parsed: everything a model needed to recover came last and disappeared
+  first.
+
+  Two changes. The metadata now goes through the same `clamp` every other path
+  uses, so only `text` can fill the budget and `max_chars` already bounds that.
+  And `untrustedResult` shrinks the **largest field** of an envelope instead of
+  the document, which is what `jsonResult` beside it has always done and says
+  so in a comment.
+
+- **A corrupt readable archive is reported, not quoted.** `get_link_content`
+  checked the content type and then called `JSON.parse` unguarded. A body that
+  claims JSON and is not — something `api.request()` treats as a thing that
+  happens — threw, and `run()` answered with Node's parser message, which quotes
+  about ten characters of the body. Those characters come from a saved foreign
+  page and reached the model **outside** the untrusted wrapper the rest of the
+  handler routes everything through.
+
+- `LINKWARDEN_READ_ONLY` accepts `1`, `true` and `yes`, trimmed and
+  case-insensitively, where it used to require the exact string `true`. It fails
+  _towards_ the restriction, so `LINKWARDEN_READ_ONLY=1` silently registering
+  the write tools is the one outcome it must not have.
+  `LINKWARDEN_INSECURE_TLS` keeps the exact-match rule, for the same reason read
+  the other way round.
+
+- `docs/guide/security.md` listed three of the four things the SSRF guard does
+  not cover and left out `represerve_link`, although the 0.1.3 entry claims both
+  files name it. It is there now.
+
 ### Added
 
 - Tools that need a confirmation now **ask the user**, on clients that can show
@@ -65,6 +135,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **`mcp-approval`**, **`mcp-internal-hosts`** and **`svg-asset-set`** rather
   than from copies kept here — 1122 fewer lines, and one place to fix each. None
   of them has a runtime dependency of its own.
+
+- The shared libraries move to `mcp-approval` 0.7.1, `mcp-tool-allowlist` 0.2.1,
+  `mcp-internal-hosts` 0.2.1, `mcp-integration-harness` 0.2.0 and
+  `svg-asset-set` 0.2.0. The harness change shows up in the suite: where a
+  security path asserted only that a call failed, it now has to say **why** —
+  `expectError: true` is also satisfied by a schema rejection, so a renamed
+  argument used to keep such a test green while the guard it names went
+  unreached.
+
+- `SECURITY.md` now says what the confirmation **proves**: binding to one
+  operation with one set of arguments, not freshness. No replay defence is
+  built, because the sealing key is per process, the token is single-use, and
+  `requestState` only crosses the wire on protocol revision `2026-07-28`, which
+  this server does not offer — it takes the SDK's default list, which ends at
+  `2025-11-25`. The section names what would have to change for that to stop
+  being true.
 
 ### Fixed
 

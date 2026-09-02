@@ -52,6 +52,25 @@ interface LinkUpdateBody {
   pinnedBy?: { id?: number }[];
 }
 
+/**
+ * The `details` line naming the host a stored URL points at, or none.
+ *
+ * A stored URL is not necessarily one this server ever validated — it can have
+ * arrived through the web UI, an import or an RSS subscription — so it is
+ * parsed defensively and simply omitted when it does not parse. A missing line
+ * is better than a line that says `null`.
+ */
+function hostOf(
+  url: string | null | undefined
+): { label: string; value: string }[] {
+  if (typeof url !== 'string') return [];
+  try {
+    return [{ label: 'Host', value: new URL(url).host }];
+  } catch {
+    return [];
+  }
+}
+
 async function fetchLink(api: LinkwardenApi, id: number): Promise<RawLink> {
   const link = (await api.get(idPath('/links', id))) as RawLink | null;
   if (link === null || link.id === undefined) {
@@ -223,10 +242,17 @@ export function registerLinkWriteTools(
         // Destructive because of the archive, not the bookmark: changing the
         // URL discards every preserved copy and fetches the new page. A
         // snapshot of a page that has since changed is not recoverable.
+        //
+        // Open-world because `url` is optional but real: when it is given, the
+        // caller picks an address and Linkwarden fetches it, which is exactly
+        // what `create_link` is called open-world for. An annotation is a
+        // property of the tool, not of one call — a host that sandboxes
+        // open-world tools has to see this one whether or not the current call
+        // carries a URL.
         readOnlyHint: false,
         destructiveHint: true,
         idempotentHint: true,
-        openWorldHint: false,
+        openWorldHint: true,
       },
     },
     async (
@@ -616,6 +642,9 @@ export function registerLinkWriteTools(
     async ({ link_id, confirm_token }, mcp) =>
       run(async () => {
         const resource = setResourceKey('represerve_link', [String(link_id)]);
+        // Fetching first also fails early on an id the account cannot see,
+        // instead of after the confirmation round trip.
+        const link = await fetchLink(api, link_id);
         const outcome = await approval.requestApproval(
           server,
           mcp,
@@ -623,11 +652,23 @@ export function registerLinkWriteTools(
           {
             what: `delete the preserved copies of link ${link_id} and archive the page again`,
             consequence:
-              'The existing copies are discarded before the page is fetched again, and the new archive may differ from what was stored.',
+              'The existing copies are discarded before the page is fetched again, and the new archive may differ from what was stored. Linkwarden fetches the address below from wherever this server runs.',
             resourceKey: resource,
             token: confirm_token,
             toolName: 'represerve_link',
             hint: 'Tick to go ahead, leave it to cancel.',
+            // The host, and nothing else. A link's URL can point anywhere on
+            // the network this server sits in — it may have arrived through
+            // the web UI, an import or a subscribed feed, none of which this
+            // server saw — and re-archiving is a fresh outbound request to it.
+            // Without the host there is no way to tell this "yes" apart from a
+            // harmless re-archive of a public page.
+            //
+            // `delete_link` withholds title and URL on purpose, and that stays
+            // true here: the host is not page prose, carries no instruction,
+            // and is the one part of the address the answer turns on. It is
+            // also the value the SSRF guard reasons about.
+            details: hostOf(link.url),
           }
         );
         // A token that was sent and did not match is refused with the reason

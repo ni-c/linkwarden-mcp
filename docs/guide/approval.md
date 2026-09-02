@@ -139,6 +139,16 @@ _happens_ — which is why a tool can be marked destructive without being guarde
 and it is not asked about — but it carries `openWorldHint: true`, because Linkwarden
 opens the URL the caller chose in its headless-browser preserver.
 
+Three tools carry it, not one: `create_link`, `update_link` and
+`create_rss_subscription` are exactly the tools with a `url` parameter, and a
+test asserts that those two sets are the same. `update_link` and
+`create_rss_subscription` said `false` until 0.3.0, on the reading that their
+usual call fetches nothing. That is a property of a call, and an annotation is a
+property of a tool: a client that gates open-world tools has to see them whether
+or not this particular call carries a URL. `create_rss_subscription` is the
+broader of the two — Linkwarden pulls the feed at once and then creates *and
+archives* a link for every entry in it.
+
 ## Behind a gateway
 
 Both protocol revisions are handled from one code path. On `2025-11-25` the

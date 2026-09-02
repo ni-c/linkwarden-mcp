@@ -146,6 +146,14 @@ export function registerTagWriteTools(
         //
         // Bound to the id *and* the new name: an approval for "rename 7 to
         // reading" must not execute "rename 7 to archive".
+        //
+        // Both targets are labelled, because `setResourceKey` sorts its list
+        // and `String(tag_id)` erases the difference between an id and a name.
+        // Unlabelled, `{tag_id: 7, name: "12"}` and `{tag_id: 12, name: "7"}`
+        // both fingerprint `["7","12"]` — one key for two different renames,
+        // and both pass the schema, since a purely numeric tag name is legal
+        // (a year, an issue number). Prefixing the targets keeps the two
+        // positions apart.
         const outcome = await approval.requestApproval(
           server,
           mcp,
@@ -155,7 +163,10 @@ export function registerTagWriteTools(
             consequence:
               'Every link that carries the tag shows the new name, and the old ' +
               'one is not recoverable from here.',
-            resourceKey: setResourceKey('rename_tag', [String(tag_id), name]),
+            resourceKey: setResourceKey('rename_tag', [
+              `tag:${tag_id}`,
+              `name:${name}`,
+            ]),
             token: confirm_token,
             details: [{ label: 'New name', value: name }],
             toolName: 'rename_tag',

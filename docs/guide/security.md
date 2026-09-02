@@ -121,6 +121,18 @@ Linkwarden also resolves again when it fetches, and redirects or anything the he
 browser loads from the page are URLs this server never saw. Where Linkwarden sits on the
 network remains the boundary that holds.
 
+**`represerve_link` re-archives a URL Linkwarden already holds**, and does not re-check
+it. The URL either came through this server and was checked then, or it arrived through
+the web UI, an import or a subscribed feed, where this server has no say. On an instance
+whose stored links predate this guard, that means the tool can refresh a stale internal
+read rather than merely re-expose an old one — and `get_link_content` actively steers a
+model there whenever a link has no readable archive.
+
+So its confirmation dialog names the **host** the re-archive will fetch, on a labelled
+line under the "supplied by the caller" heading. Only the host: the path and the title
+are page prose from a foreign site, and `delete_link` withholds those on purpose. The
+host is the part the answer turns on and the part the SSRF guard reasons about.
+
 One side effect worth knowing: the check performs a DNS lookup from the machine running
 this server for every hostname a caller supplies, before anything reaches Linkwarden.
 
