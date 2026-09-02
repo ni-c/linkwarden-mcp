@@ -89,7 +89,7 @@ describe('tool surface', () => {
   it('lists tools without credentials so registries can introspect it', async () => {
     const client = await connect({ url: undefined, token: undefined });
     const names = (await client.listTools()).tools.map((t) => t.name);
-    expect(names).toEqual(expect.arrayContaining(READ_TOOLS));
+    expect(names).toEqual(expect.arrayContaining([...READ_TOOLS]));
   });
 
   it('marks every read tool readOnlyHint and every destructive tool destructiveHint', async () => {
