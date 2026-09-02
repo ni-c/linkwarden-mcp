@@ -235,7 +235,7 @@ describe('loadConfig', () => {
     spy.mockRestore();
   });
 
-  it('reads the boolean flags with a strict string compare', () => {
+  it('reads the two boolean flags in opposite directions', () => {
     const config = loadConfig(
       env({
         LINKWARDEN_URL: 'https://links.example.net',
@@ -249,6 +249,53 @@ describe('loadConfig', () => {
     // silently disable certificate validation.
     expect(config.insecureTls).toBe(false);
   });
+
+  it.each(['true', 'TRUE', ' true ', '1', 'yes', 'Yes'])(
+    'reads LINKWARDEN_READ_ONLY=%j as on',
+    (value) => {
+      // Read-only fails *towards* the restriction, so every spelling an
+      // operator plausibly writes into a compose file has to close it.
+      // `LINKWARDEN_READ_ONLY=1` silently registering the write tools is the
+      // one outcome it must not have — the opposite of the rule above, and for
+      // the same reason.
+      const config = loadConfig(
+        env({
+          LINKWARDEN_URL: 'https://links.example.net',
+          LINKWARDEN_TOKEN: 'ey.x',
+          LINKWARDEN_READ_ONLY: value,
+        })
+      );
+      expect(config.readOnly).toBe(true);
+    }
+  );
+
+  it.each(['false', '', 'no', '0', 'off'])(
+    'reads LINKWARDEN_READ_ONLY=%j as off',
+    (value) => {
+      const config = loadConfig(
+        env({
+          LINKWARDEN_URL: 'https://links.example.net',
+          LINKWARDEN_TOKEN: 'ey.x',
+          LINKWARDEN_READ_ONLY: value,
+        })
+      );
+      expect(config.readOnly).toBe(false);
+    }
+  );
+
+  it.each(['1', 'yes', 'TRUE', ' true '])(
+    'leaves LINKWARDEN_INSECURE_TLS off for %j',
+    (value) => {
+      const config = loadConfig(
+        env({
+          LINKWARDEN_URL: 'https://links.example.net',
+          LINKWARDEN_TOKEN: 'ey.x',
+          LINKWARDEN_INSECURE_TLS: value,
+        })
+      );
+      expect(config.insecureTls).toBe(false);
+    }
+  );
 
   it('names both missing variables when nothing is configured', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});

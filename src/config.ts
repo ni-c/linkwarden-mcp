@@ -88,7 +88,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const url = env.LINKWARDEN_URL;
   const token = env.LINKWARDEN_TOKEN;
   const insecureTls = env.LINKWARDEN_INSECURE_TLS === 'true';
-  const readOnly = env.LINKWARDEN_READ_ONLY === 'true';
+  // Deliberately more forgiving than `LINKWARDEN_INSECURE_TLS` above, and the
+  // asymmetry is the safety argument rather than an oversight: a misspelt value
+  // here fails *towards* the restriction, so `LINKWARDEN_READ_ONLY=1` in a
+  // compose file must not silently register the write tools. The insecure-TLS
+  // switch fails the other way, so it keeps the exact-match rule.
+  const readOnly = /^(1|true|yes)$/i.test(
+    env.LINKWARDEN_READ_ONLY?.trim() ?? ''
+  );
   const allowTools = env.LINKWARDEN_ALLOW_TOOLS;
   const denyTools = env.LINKWARDEN_DENY_TOOLS;
 
