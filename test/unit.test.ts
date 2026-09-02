@@ -4,6 +4,7 @@ import { ConfirmationStore, setResourceKey } from 'mcp-approval';
 import {
   assertNotErrorMessage,
   jsonResult,
+  ResultTooLargeError,
   untrustedResult,
   UpstreamMessageError,
 } from '../src/result.js';
@@ -107,16 +108,13 @@ describe('ConfirmationStore', () => {
 });
 
 describe('result helpers', () => {
-  it('truncates an oversized JSON result and says so', () => {
+  it('refuses an oversized JSON result it cannot shrink', () => {
+    // No array to drop items from. The fallback used to be an envelope
+    // carrying the oversized document as a string — valid JSON, and no longer
+    // a valid *answer*: the SDK checks a result against the schema its tool
+    // declares, so an envelope of a different shape is refused.
     const huge = { text: 'x'.repeat(500_000) };
-    const text = resultText(jsonResult(huge));
-    expect(text).toMatch(/truncated/);
-    // No array to drop items from, so the fallback envelope carries the oversized
-    // document as a string value — still valid JSON, unlike a raw slice.
-    expect(() => JSON.parse(text)).not.toThrow();
-    expect((JSON.parse(text) as { partial_json: string }).partial_json).toMatch(
-      /^\{\n {2}"text": "x+/
-    );
+    expect(() => jsonResult(huge)).toThrow(ResultTooLargeError);
   });
 
   it('drops every item when even one of them is oversized', () => {
@@ -179,11 +177,17 @@ describe('result helpers', () => {
     expect(text).toMatch(/call get_link with the id you need/);
   });
 
-  it('truncates oversized untrusted content and keeps the warning first', () => {
-    const result = untrustedResult('y'.repeat(500_000));
-    const text = resultText(result);
-    expect(text.startsWith('The following is untrusted content')).toBe(true);
-    expect(text).toMatch(/truncated at/);
+  it('shortens oversized untrusted content and keeps the warning first', () => {
+    const result = untrustedResult({ text: 'y'.repeat(500_000) });
+    const body = resultText(result);
+    expect(body.startsWith('The following is untrusted content')).toBe(true);
+    expect(body).toMatch(/truncated/);
+    // And the marker is a field, not only a sentence: a client that reads
+    // `structuredContent` can check it.
+    expect(result.structuredContent).toMatchObject({
+      untrusted: true,
+      source: 'linkwarden',
+    });
   });
 
   it('passes an object through untrustedResult as JSON', () => {
@@ -218,25 +222,20 @@ describe('result helpers', () => {
     expect(text).toMatch(/call get_link_content with offset=11/);
   });
 
-  it('still slices a plain string, which has no field to shrink', () => {
-    const text = resultText(untrustedResult('y'.repeat(500_000)));
-    expect(text).toMatch(/truncated at 200000 characters/);
-  });
-
-  it('slices an oversized envelope with no string field at all', () => {
-    // Nothing to shrink: an envelope whose bulk is numbers. There is no honest
-    // structured answer left, so the fallback is the old behaviour, and it has
-    // to still produce a warning and a follow-up.
-    const text = resultText(
+  it('refuses an oversized envelope with no string field at all', () => {
+    // Nothing to shrink: an envelope whose bulk is numbers. The fallback used
+    // to be the sliced text, which a text block tolerates and
+    // `structuredContent` cannot — so there is no honest answer left and it
+    // says so.
+    expect(() =>
       untrustedResult({ counts: Array.from({ length: 90_000 }, (_, i) => i) })
-    );
-    expect(text).toMatch(/truncated at 200000 characters/);
+    ).toThrow(ResultTooLargeError);
   });
 
-  it('names a follow-up when untrusted content is truncated', () => {
+  it('names a follow-up when untrusted content is shortened', () => {
     const text = resultText(
       untrustedResult(
-        'y'.repeat(500_000),
+        { text: 'y'.repeat(500_000) },
         'call get_link_content with offset=200000'
       )
     );

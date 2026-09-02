@@ -1,4 +1,5 @@
 import {
+  expectEveryToolDeclaresOutputSchema,
   expectEveryToolExercised,
   startServer,
   toolCoverage,
@@ -8,7 +9,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ALL_TOOLS } from '../../src/tools/catalogue.js';
-import { bootstrap, type Sandbox } from './bootstrap.js';
+import { bootstrap, PORT, type Sandbox } from './bootstrap.js';
 
 /**
  * Every tool in the catalogue, against a real Linkwarden in Docker.
@@ -265,7 +266,7 @@ describe('RSS', () => {
       'create_rss_subscription',
       {
         name: 'Integration Loopback',
-        url: 'http://127.0.0.1:3010/api/v1/users',
+        url: `http://127.0.0.1:${PORT}/api/v1/users`,
         collection_id: collectionId,
       },
       { expectError: /refusing to point Linkwarden at 127\.0\.0\.1/ }
@@ -293,10 +294,14 @@ describe('RSS', () => {
 
 describe('the fallback path for a client with no dialog', () => {
   it('merges tags only after the token comes back', async () => {
-    const refusal = await plain.call('merge_tags', {
-      tag_ids: [tagIds[1], tagIds[2]],
-      new_name: 'integration-merged',
-    });
+    // An error result: nothing was merged, which is what `isError` says — and
+    // a tool that declares an `outputSchema` may not answer without
+    // `structuredContent` unless the result is an error.
+    const refusal = await plain.call(
+      'merge_tags',
+      { tag_ids: [tagIds[1], tagIds[2]], new_name: 'integration-merged' },
+      { expectError: /confirm_token=/ }
+    );
     expect(refusal).toContain('confirm_token');
     expect(plain.prompts).toHaveLength(0);
 
@@ -339,6 +344,15 @@ describe('cleaning up', () => {
     await asking.call('delete_link', { link_id: linkId });
     await asking.call('delete_collection', { collection_id: collectionId });
   });
+});
+
+it('declares an output schema on every tool', async () => {
+  // The unit suite checks the same thing against a stub. Here it is checked
+  // against the server that has just answered every one of these tools against
+  // a real Linkwarden — and each of those answers went through the SDK's
+  // validation against the schema below it.
+  const { tools } = await asking.client.listTools();
+  expectEveryToolDeclaresOutputSchema(tools);
 });
 
 it('exercises every tool in the catalogue', () => {

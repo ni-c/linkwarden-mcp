@@ -12,6 +12,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Every tool declares an `outputSchema` and answers with `structuredContent`
+  beside the text block. A client no longer has to parse prose to use a result —
+  which seven of them made unavoidable, since they answered with a sentence. The
+  sentence stays, in the text block.
+
+  The ten reading tools carry `untrusted: true` and `source: "linkwarden"` as
+  fields. This server has always said so in `notes`, which is prose in a list: a
+  client can read it and cannot check it. The write tools are without the
+  marker — they report an id this server was given and a count it made.
+
+### Changed
+
+- Three refusals in `get_link_content` are error results rather than plain
+  ones: no readable archive, an archive served with the wrong content type, and
+  one that is not valid JSON. Each read like an answer while being the
+  opposite.
+
+- A result too large to shrink is an error rather than an envelope carrying the
+  oversized document as a string. That envelope is valid JSON and no longer a
+  valid _answer_: the SDK checks a result against the schema its tool declares.
+
+- The two-call `confirm_token` prompt is an error result. What was asked for did
+  not happen, which is what `isError` says. The text is unchanged and still
+  carries the token.
+
+- The integration compose file publishes Linkwarden on `LINKWARDEN_PORT`
+  (default 3010) instead of a hardcoded 3010, so a workstation that already
+  runs something there does not need a patched compose file. `smtp-mcp` has
+  done the same for its own port for a while.
+
 ### Security
 
 - **`update_link` and `create_rss_subscription` are `openWorldHint: true`.**

@@ -21,8 +21,11 @@ export interface Sandbox {
   env: Record<string, string>;
 }
 
+/** The port the compose file publishes; both read the same variable. */
+export const PORT = process.env.LINKWARDEN_PORT ?? '3010';
+
 export async function bootstrap(
-  url = 'http://127.0.0.1:3010'
+  url = `http://127.0.0.1:${PORT}`
 ): Promise<Sandbox> {
   assertLoopback(url);
   await waitForHttp(`${url}/api/v1/auth/session`, {

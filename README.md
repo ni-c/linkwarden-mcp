@@ -149,6 +149,24 @@ docker run --rm -i \
 
 ## Tools
 
+Every tool declares an `outputSchema` and answers with `structuredContent`
+alongside the text block, so a client can use the result without parsing prose.
+Seven tools that answered with a sentence — _"Link 42 deleted."_ — now answer
+with the fields as well, and the sentence stays in the text block.
+
+The ten reading tools carry `untrusted: true` and `source: "linkwarden"` as
+fields. Bookmark titles, descriptions and above all the preserved article text
+are written by whoever controls the target site; this server has always said so
+in `notes`, which is prose a client can read but not check, and the field is
+what makes it checkable. The write tools are without it: they report an id this
+server was given and a count it made.
+
+An over-budget result still drops list entries, and an oversized untrusted
+envelope still loses characters from its largest field. Where neither leaves
+anything to give it is now an **error** rather than an envelope carrying the
+oversized document as a string: that envelope is valid JSON and not a valid
+answer, since the SDK checks a result against the schema its tool declares.
+
 ### Reading
 
 | Tool                     | Description                                                                                              |

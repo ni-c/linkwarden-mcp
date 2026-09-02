@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { tag } from '../output-schema.js';
 import { setResourceKey } from 'mcp-approval';
 import type { Approver, ConfirmationStore } from 'mcp-approval';
 import {
@@ -7,7 +8,6 @@ import {
   errorResult,
   jsonResult,
   run,
-  textResult,
 } from '../result.js';
 
 import type { LinkwardenApi } from '../api.js';
@@ -73,6 +73,7 @@ export function registerTagWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({ tags: z.array(tag) }).catchall(z.unknown()),
     },
     async ({
       names,
@@ -137,6 +138,7 @@ export function registerTagWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({ updated: tag }).catchall(z.unknown()),
     },
     async ({ tag_id, name, confirm_token }, mcp) =>
       run(async () => {
@@ -210,6 +212,10 @@ export function registerTagWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({
+        deleted_count: z.number().int(),
+        deleted_tag_ids: z.array(z.number().int()),
+      }),
     },
     async ({ tag_ids, confirm_token }, mcp) =>
       run(async () => {
@@ -245,7 +251,7 @@ export function registerTagWriteTools(
 
         const result = await api.delete('/tags', { tagIds: ids });
         assertNotErrorMessage(result, 'Deleting the tags');
-        return textResult(`Deleted ${ids.length} tag(s): ${ids.join(', ')}.`);
+        return jsonResult({ deleted_count: ids.length, deleted_tag_ids: ids });
       })
   );
 
@@ -284,6 +290,12 @@ export function registerTagWriteTools(
         idempotentHint: false,
         openWorldHint: false,
       },
+      outputSchema: z
+        .object({
+          new_tag: tag,
+          merged_tag_ids: z.array(z.number().int()),
+        })
+        .catchall(z.unknown()),
     },
     async ({ tag_ids, new_name, confirm_token }, mcp) =>
       run(async () => {

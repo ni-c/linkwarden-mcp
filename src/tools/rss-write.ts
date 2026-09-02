@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { rssSubscription } from '../output-schema.js';
 import { setResourceKey } from 'mcp-approval';
 import type { Approver, ConfirmationStore } from 'mcp-approval';
 import {
@@ -7,7 +8,6 @@ import {
   errorResult,
   jsonResult,
   run,
-  textResult,
 } from '../result.js';
 import {
   assertFetchableUrl,
@@ -86,6 +86,9 @@ export function registerRssWriteTools(
         idempotentHint: false,
         openWorldHint: true,
       },
+      outputSchema: z
+        .object({ created: rssSubscription })
+        .catchall(z.unknown()),
     },
     async ({ name, url, collection_id, collection_name }) =>
       run(async () => {
@@ -134,6 +137,10 @@ export function registerRssWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({
+        deleted_rss_subscription_id: z.number().int(),
+        note: z.string(),
+      }),
     },
     async ({ rss_subscription_id, confirm_token }, mcp) =>
       run(async () => {
@@ -169,9 +176,10 @@ export function registerRssWriteTools(
 
         const deleted = await api.delete(idPath('/rss', rss_subscription_id));
         assertNotErrorMessage(deleted, 'Deleting the RSS subscription');
-        return textResult(
-          `RSS subscription ${rss_subscription_id} deleted. The links it already created remain.`
-        );
+        return jsonResult({
+          deleted_rss_subscription_id: rss_subscription_id,
+          note: 'The links it already created remain.',
+        });
       })
   );
 }

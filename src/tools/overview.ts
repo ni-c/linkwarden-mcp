@@ -7,10 +7,17 @@ import {
   type RawRssSubscription,
 } from '../shape.js';
 import { z } from 'zod';
+import {
+  link,
+  notes,
+  rssSubscription,
+  truncationNote,
+  untrustedFields,
+} from '../output-schema.js';
 
 import type { LinkwardenApi } from '../api.js';
 import { READ_ONLY } from './annotations.js';
-import { jsonResult, run } from '../result.js';
+import { run, untrustedResult } from '../result.js';
 
 interface RawUser {
   id?: number;
@@ -49,11 +56,22 @@ export function registerOverviewReadTools(
         'will later have to read.',
       inputSchema: z.object({}),
       annotations: READ_ONLY,
+      outputSchema: z
+        .object({
+          ...untrustedFields,
+          id: z.number().int().optional(),
+          name: z.string().nullable(),
+          profile_is_private: z.boolean(),
+          prevent_duplicate_links: z.boolean(),
+          archival_defaults: z.looseObject({}).optional(),
+          notes,
+        })
+        .catchall(z.unknown()),
     },
     async () =>
       run(async () => {
         const user = (await api.get('/users/me')) as RawUser;
-        return jsonResult({
+        return untrustedResult({
           id: user.id,
           username: user.username ?? null,
           name: user.name ?? null,
@@ -84,13 +102,20 @@ export function registerOverviewReadTools(
         'targeted.',
       inputSchema: z.object({}),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        truncated: truncationNote,
+        count: z.number().int(),
+        links: z.array(link),
+        notes,
+      }),
     },
     async () =>
       run(async () => {
         // This route answers with a flat array of links, not with an object.
         const links = (await api.get('/dashboard')) as RawLink[];
         const list = Array.isArray(links) ? links : [];
-        return jsonResult({
+        return untrustedResult({
           count: list.length,
           links: list.map(shapeLink),
           notes: [UNTRUSTED_METADATA_NOTE],
@@ -107,11 +132,18 @@ export function registerOverviewReadTools(
         'files new entries as links in the configured collection.',
       inputSchema: z.object({}),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        truncated: truncationNote,
+        count: z.number().int(),
+        subscriptions: z.array(rssSubscription),
+        notes,
+      }),
     },
     async () =>
       run(async () => {
         const subscriptions = (await api.get('/rss')) as RawRssSubscription[];
-        return jsonResult({
+        return untrustedResult({
           count: subscriptions.length,
           subscriptions: subscriptions.map(shapeRssSubscription),
           notes: [UNTRUSTED_METADATA_NOTE],
@@ -132,11 +164,19 @@ export function registerOverviewReadTools(
         'whole instance, not just this account.',
       inputSchema: z.object({}),
       annotations: READ_ONLY,
+      // No untrusted marker: four counters and a search-index backlog, all
+      // numbers the instance keeps about itself.
+      outputSchema: z
+        .object({
+          links: z.looseObject({}),
+          search_index: z.looseObject({}),
+        })
+        .catchall(z.unknown()),
     },
     async () =>
       run(async () => {
         const stats = (await api.get('/worker')) as RawWorkerStats;
-        return jsonResult({
+        return untrustedResult({
           links: {
             pending: stats.link?.pending ?? 0,
             preserved: stats.link?.done ?? 0,

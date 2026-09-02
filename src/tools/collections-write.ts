@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { collection } from '../output-schema.js';
 import { setResourceKey } from 'mcp-approval';
 import type { Approver, ConfirmationStore } from 'mcp-approval';
 import {
@@ -8,7 +9,6 @@ import {
   errorResult,
   jsonResult,
   run,
-  textResult,
 } from '../result.js';
 
 import type { LinkwardenApi } from '../api.js';
@@ -74,6 +74,7 @@ export function registerCollectionWriteTools(
         idempotentHint: false,
         openWorldHint: false,
       },
+      outputSchema: z.object({ created: collection }),
     },
     async ({ name, description, parent_id, color }) =>
       run(async () => {
@@ -134,6 +135,7 @@ export function registerCollectionWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({ updated: collection }),
     },
     async (
       {
@@ -271,6 +273,10 @@ export function registerCollectionWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({
+        deleted_collection_id: z.number().int(),
+        note: z.string(),
+      }),
     },
     async ({ collection_id, confirm_token }, mcp) =>
       run(async () => {
@@ -317,9 +323,10 @@ export function registerCollectionWriteTools(
 
         const deleted = await api.delete(idPath('/collections', collection_id));
         assertNotErrorMessage(deleted, 'Deleting the collection');
-        return textResult(
-          `Collection ${collection_id} and its contents were deleted.`
-        );
+        return jsonResult({
+          deleted_collection_id: collection_id,
+          note: 'Its contents were deleted with it.',
+        });
       })
   );
 }

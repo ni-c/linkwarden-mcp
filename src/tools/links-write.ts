@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { link } from '../output-schema.js';
 import { setResourceKey } from 'mcp-approval';
 import type { Approver, ConfirmationStore } from 'mcp-approval';
 import {
@@ -8,7 +9,6 @@ import {
   errorResult,
   jsonResult,
   run,
-  textResult,
 } from '../result.js';
 import {
   assertFetchableUrl,
@@ -174,6 +174,7 @@ export function registerLinkWriteTools(
         idempotentHint: false,
         openWorldHint: true,
       },
+      outputSchema: z.object({ created: link }).catchall(z.unknown()),
     },
     async ({ url, name, description, collection_id, collection_name, tags }) =>
       run(async () => {
@@ -254,6 +255,7 @@ export function registerLinkWriteTools(
         idempotentHint: true,
         openWorldHint: true,
       },
+      outputSchema: z.object({ updated: link }).catchall(z.unknown()),
     },
     async (
       { link_id, name, url, description, collection_id, tags, confirm_token },
@@ -362,6 +364,7 @@ export function registerLinkWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({ link }).catchall(z.unknown()),
     },
     async ({ link_id, pinned }) =>
       run(async () => {
@@ -407,6 +410,7 @@ export function registerLinkWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({ deleted_link_id: z.number().int() }),
     },
     async ({ link_id, confirm_token }, mcp) =>
       run(async () => {
@@ -440,7 +444,7 @@ export function registerLinkWriteTools(
 
         const deleted = await api.delete(idPath('/links', link_id));
         assertNotErrorMessage(deleted, 'Deleting the link');
-        return textResult(`Link ${link_id} deleted.`);
+        return jsonResult({ deleted_link_id: link_id });
       })
   );
 
@@ -485,6 +489,12 @@ export function registerLinkWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z
+        .object({
+          updated_count: z.number().int(),
+          updated_link_ids: z.array(z.number().int()),
+        })
+        .catchall(z.unknown()),
     },
     async (
       { link_ids, tags, replace_tags, collection_id, confirm_token },
@@ -579,6 +589,10 @@ export function registerLinkWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({
+        deleted_count: z.number().int(),
+        deleted_link_ids: z.array(z.number().int()),
+      }),
     },
     async ({ link_ids, confirm_token }, mcp) =>
       run(async () => {
@@ -614,7 +628,7 @@ export function registerLinkWriteTools(
 
         const result = await api.delete('/links', { linkIds: ids });
         assertNotErrorMessage(result, 'Deleting the links');
-        return textResult(`Deleted ${ids.length} link(s): ${ids.join(', ')}.`);
+        return jsonResult({ deleted_count: ids.length, deleted_link_ids: ids });
       })
   );
 
@@ -638,6 +652,11 @@ export function registerLinkWriteTools(
         idempotentHint: false,
         openWorldHint: false,
       },
+      outputSchema: z.object({
+        link_id: z.number().int(),
+        queued: z.literal(true),
+        note: z.string(),
+      }),
     },
     async ({ link_id, confirm_token }, mcp) =>
       run(async () => {
@@ -685,9 +704,11 @@ export function registerLinkWriteTools(
         // This route answers 200 with "Invalid URL." when the link has none.
         const result = await api.put(idPath('/links', link_id, '/archive'));
         assertNotErrorMessage(result, 'Re-preserving the link');
-        return textResult(
-          `Link ${link_id} was queued for preservation. Check get_worker_stats for progress.`
-        );
+        return jsonResult({
+          link_id,
+          queued: true,
+          note: 'Check get_worker_stats for progress.',
+        });
       })
   );
 
@@ -715,6 +736,11 @@ export function registerLinkWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({
+        deleted_count: z.number().int(),
+        link_ids: z.array(z.number().int()),
+        note: z.string(),
+      }),
     },
     async ({ link_ids, confirm_token }, mcp) =>
       run(async () => {
@@ -753,9 +779,11 @@ export function registerLinkWriteTools(
 
         const result = await api.delete('/links/archive', { linkIds: ids });
         assertNotErrorMessage(result, 'Deleting the preserved copies');
-        return textResult(
-          `Deleted the preserved copies of ${ids.length} link(s): ${ids.join(', ')}.`
-        );
+        return jsonResult({
+          deleted_count: ids.length,
+          link_ids: ids,
+          note: 'The links themselves remain; only their preserved copies are gone.',
+        });
       })
   );
 }

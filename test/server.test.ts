@@ -110,6 +110,55 @@ describe('tool surface', () => {
     }
   });
 
+  it('declares an output schema on every tool', async () => {
+    // The same argument as the annotations below, one field along. A tool that
+    // says nothing about its result forces a client to parse prose to find out
+    // what it got, and the SDK sends no `structuredContent` at all for a tool
+    // that declared no schema — seven tools here answered with a sentence.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) {
+      expect(tool.outputSchema, tool.name).toBeDefined();
+      // An object root, not merely a schema. SEP-2106 allows an array or a
+      // scalar, but a 2025-era client is served that same tool with the schema
+      // rewritten to `{result: …}` — so it would answer in two shapes
+      // depending on who asked.
+      expect(tool.outputSchema?.type, tool.name).toBe('object');
+    }
+  });
+
+  it('marks the results that carry saved-page content as untrusted', async () => {
+    // Bookmark titles, descriptions and above all the preserved article text
+    // are written by whoever controls the target site. A client that reads only
+    // `structuredContent` must not get them unframed — the note this server
+    // adds lives in `notes`, which a client can read but not check.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    const marked = tools
+      .filter((tool) => {
+        const properties = tool.outputSchema?.properties as
+          Record<string, unknown> | undefined;
+        return properties?.untrusted !== undefined;
+      })
+      .map((tool) => tool.name)
+      .sort();
+    // The read tools. Everything else reports an id this server was given and
+    // a count it made, or a record it just wrote.
+    expect(marked).toEqual([
+      'get_collection',
+      'get_current_user',
+      'get_dashboard',
+      'get_link',
+      'get_link_content',
+      'get_tag',
+      'list_collections',
+      'list_rss_subscriptions',
+      'list_tags',
+      'search_links',
+    ]);
+  });
+
   it('declares all four annotation hints on every tool', async () => {
     // Not a style rule. Two of the four default to a *stronger* claim than
     // silence suggests: the specification gives destructiveHint and

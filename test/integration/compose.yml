@@ -18,7 +18,7 @@ services:
     environment:
       DATABASE_URL: postgresql://linkwarden:integration-not-a-secret@db:5432/linkwarden
       NEXTAUTH_SECRET: integration-only-not-a-secret
-      NEXTAUTH_URL: http://127.0.0.1:3010/api/v1/auth
+      NEXTAUTH_URL: http://127.0.0.1:${LINKWARDEN_PORT:-3010}/api/v1/auth
       # Meilisearch is not decoration. Without it Linkwarden falls back to a
       # LIKE query and the search *operators* stop working — a query with
       # `name:` or `tag:` is then matched as one literal string, so a search
@@ -38,7 +38,10 @@ services:
       site:
         condition: service_started
     ports:
-      - '127.0.0.1:3010:3000'
+      # Overridable because 3010 is a popular port and a workstation that
+      # already runs something there should not need a patched compose file.
+      # Set LINKWARDEN_PORT; the suite reads the same variable.
+      - '127.0.0.1:${LINKWARDEN_PORT:-3010}:3000'
 
   # A page and a feed Linkwarden can reach, on the compose network and nowhere
   # else. Bookmarking something on the public internet would make every run

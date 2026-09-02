@@ -1,6 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import {
+  link,
+  notes,
+  truncationNote,
+  untrustedFields,
+} from '../output-schema.js';
+import {
   ArchivedFormat,
   collectionId,
   cursor,
@@ -24,7 +30,7 @@ import {
 
 import type { LinkwardenApi } from '../api.js';
 import { READ_ONLY } from './annotations.js';
-import { jsonResult, run, textResult, untrustedResult } from '../result.js';
+import { errorResult, run, untrustedResult } from '../result.js';
 
 /**
  * Upper bound on the links returned in one call. Linkwarden itself pages at
@@ -118,6 +124,14 @@ export function registerLinkReadTools(
         cursor,
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        truncated: truncationNote,
+        count: z.number().int(),
+        next_cursor: z.number().int().nullable().optional(),
+        links: z.array(link),
+        notes,
+      }),
     },
     async ({ query, collection_id, tag_id, pinned_only, sort, cursor: from }) =>
       run(async () => {
@@ -170,7 +184,7 @@ export function registerLinkReadTools(
           );
         }
 
-        return jsonResult(
+        return untrustedResult(
           {
             count: links.length,
             next_cursor: nextCursor,
@@ -194,11 +208,16 @@ export function registerLinkReadTools(
         'get_link_content for that.',
       inputSchema: z.object({ link_id: linkId }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        link: link.nullable(),
+        notes,
+      }),
     },
     async ({ link_id }) =>
       run(async () => {
         const link = (await api.get(idPath('/links', link_id))) as RawLink;
-        return jsonResult({
+        return untrustedResult({
           link: shapeLink(link),
           notes: [UNTRUSTED_METADATA_NOTE],
         });
@@ -241,6 +260,28 @@ export function registerLinkReadTools(
           ),
       }),
       annotations: READ_ONLY,
+      // The article text is the least trusted thing this server returns:
+      // whoever controls the target site wrote it.
+      outputSchema: z
+        .object({
+          ...untrustedFields,
+          truncated: truncationNote,
+          link_id: z.number().int(),
+          title: z.string().nullable(),
+          byline: z.string().nullable(),
+          site_name: z.string().nullable(),
+          published_time: z.string().nullable().optional(),
+          lang: z.string().nullable().optional(),
+          length: z.number().optional(),
+          excerpt: z.string().nullable().optional(),
+          offset: z.number().int().optional(),
+          returned_chars: z.number().int().optional(),
+          total_chars: z.number().int().optional(),
+          next_offset: z.number().int().nullable().optional(),
+          text: z.string().optional(),
+          notes,
+        })
+        .catchall(z.unknown()),
     },
     async ({ link_id, offset, max_chars }) =>
       run(async () => {
@@ -252,7 +293,11 @@ export function registerLinkReadTools(
           const others = Object.entries(available)
             .filter(([, exists]) => exists)
             .map(([format]) => format);
-          return textResult(
+          // An error result: the tool was asked for the text of a page and
+          // has none to give. It also has to be one — a tool that declares an
+          // `outputSchema` may not answer without `structuredContent` unless
+          // the result is an error.
+          return errorResult(
             `Link ${link_id} has no readable archive.` +
               (others.length > 0
                 ? ` Preserved formats that do exist: ${others.join(', ')} — those are binary or raw HTML and cannot be read as text.`
@@ -268,7 +313,7 @@ export function registerLinkReadTools(
           })
         );
         if (!raw.contentType.includes('application/json')) {
-          return textResult(
+          return errorResult(
             `Linkwarden returned ${raw.contentType || 'an unknown content type'} for the readable archive of link ${link_id} instead of JSON. The archive is probably corrupt; represerve_link recreates it.`
           );
         }
@@ -294,7 +339,7 @@ export function registerLinkReadTools(
         try {
           article = JSON.parse(raw.text) as typeof article;
         } catch {
-          return textResult(
+          return errorResult(
             `Linkwarden returned a readable archive for link ${link_id} that is not valid JSON. The archive is probably corrupt; represerve_link recreates it.`
           );
         }
