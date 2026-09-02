@@ -7,6 +7,7 @@
 [![license](https://img.shields.io/npm/l/linkwarden-mcp)](LICENSE)
 [![container](https://img.shields.io/badge/ghcr.io-ni--c%2Flinkwarden--mcp-blue)](https://github.com/ni-c/linkwarden-mcp/pkgs/container/linkwarden-mcp)
 [![docs](https://img.shields.io/badge/docs-linkwarden--mcp.ni--c.de-informational)](https://linkwarden-mcp.ni-c.de)
+[![HTTP • via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-6f42c1)](https://mcp-hub.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
@@ -41,6 +42,22 @@ from eight than from twenty-eight — see
 > [linkwarden/linkwarden](https://github.com/linkwarden/linkwarden), verified against
 > **v2.16.0** on 2026-08-17. Those two files are the source of truth for every tool
 > here.
+
+## What makes it different
+
+**Reads what Linkwarden preserved.** Linkwarden keeps a permanent copy of every
+page it saves. `get_link_content` serves that article text, so a saved link can be
+summarised or quoted without fetching the live site again — and long articles are
+sliced, not dumped.
+
+**Organises without clobbering.** Linkwarden's update routes replace whole
+records. This server reads the current state and merges, so changing a title
+never silently strips a link's tags or a collection's collaborators.
+
+**Output is an allowlist.** Linkwarden returns whole Prisma rows; every field in a
+result here is named explicitly. Article text stays out of list results, collection
+members' names and e-mail addresses are dropped, and a column added by a future
+release cannot land in the model's context unannounced.
 
 ## Requirements
 
@@ -147,6 +164,40 @@ docker run --rm -i \
   linkwarden-mcp
 ```
 
+### Through mcp-hub
+
+A client that cannot spawn a local process — ChatGPT connectors, Claude on the web,
+Cursor, LibreChat — reaches linkwarden-mcp through [mcp-hub](https://mcp-hub.ni-c.de): one
+container serves many stdio MCP servers over Streamable HTTP, with an OAuth 2.1 login
+behind a single password and long-lived tokens for the clients that cannot do OAuth. Its
+`/hub` endpoint puts every server behind six meta-tools, so one connector reaches all of
+them without N×tool schemas in the model's context, and it speaks both protocol revisions
+— a question this server asks travels through it to the person at the far end.
+
+Its `/config/mcp.json` uses Claude Code's format, so the entry is the one you already
+have:
+
+```json
+{
+  "mcpServers": {
+    "linkwarden": {
+      "command": "npx",
+      "args": ["-y", "linkwarden-mcp"],
+      "env": {
+        "LINKWARDEN_URL": "https://links.example.net",
+        "LINKWARDEN_TOKEN": "…",
+        "LINKWARDEN_ALLOW_TOOLS": "essential"
+      },
+      "denyTools": ["bulk_*"]
+    }
+  }
+}
+```
+
+`allowTools` and `denyTools` there are the hub's **own** per-server filter, which is not
+the same thing as `*_ALLOW_TOOLS` in `env` — the difference, and the mistake it invites,
+are in the [client guide](https://linkwarden-mcp.ni-c.de/guide/clients#through-mcp-hub).
+
 ## Tools
 
 Every tool declares an `outputSchema` and answers with `structuredContent`
@@ -210,7 +261,7 @@ and fall back to a two-call `confirm_token` where the client cannot show one. Se
 | `create_rss_subscription`      | Subscribe to an RSS/Atom feed.                                               |
 | `delete_rss_subscription` 👤   | Stop polling a feed.                                                         |
 
-### Deliberately not exposed
+## Not exposed, on purpose
 
 - **Access-token management** (`/tokens`). A tool that can mint API credentials is a
   privilege-escalation surface, and a bookmark server has no business holding one.
@@ -268,6 +319,11 @@ and fall back to a two-call `confirm_token` where the client cannot show one. Se
   is asked to do something destructive and is confirmed by a user can still do it.
   Scope the account, and keep host-level permission prompts on.
 
+## Documentation
+
+The full guide, tool reference and security notes live at
+**[linkwarden-mcp.ni-c.de](https://linkwarden-mcp.ni-c.de)** (source in [`docs/`](docs/)).
+
 ## Development
 
 ```sh
@@ -312,6 +368,13 @@ container image to GHCR in parallel.
 If the registry step fails, fix it on `main` and run the `mcp-registry.yml` workflow by
 hand. Re-running the failed job is not an option: it checks out the immutable tag, so a
 fix on `main` could never reach it.
+
+## Contributing
+
+Issues, discussions and pull requests are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md). For vulnerabilities please use
+[private reporting](https://github.com/ni-c/linkwarden-mcp/security/advisories/new)
+rather than a public issue; the policy is in [SECURITY.md](SECURITY.md).
 
 ## License
 
