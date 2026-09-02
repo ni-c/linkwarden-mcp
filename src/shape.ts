@@ -111,11 +111,11 @@ function hasFile(path: string | null | undefined): boolean {
  * could consume the whole result budget and push everything else out. These caps
  * are generous enough that no ordinary record is touched.
  */
-const MAX_NAME_CHARS = 300;
+export const MAX_NAME_CHARS = 300;
 const MAX_URL_CHARS = 500;
-const MAX_DESCRIPTION_CHARS = 1000;
+export const MAX_DESCRIPTION_CHARS = 1000;
 
-function clamp(
+export function clamp(
   value: string | null | undefined,
   limit: number,
   followUp: string

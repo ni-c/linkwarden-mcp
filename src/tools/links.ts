@@ -12,6 +12,9 @@ import {
   withQuery,
 } from '../schema.js';
 import {
+  clamp,
+  MAX_DESCRIPTION_CHARS,
+  MAX_NAME_CHARS,
   Notes,
   preservedFormats,
   shapeLink,
@@ -270,7 +273,15 @@ export function registerLinkReadTools(
           );
         }
 
-        const article = JSON.parse(raw.text) as {
+        // Guarded for the same reason the content-type check above exists, and
+        // for one more. `api.request()` already treats "the header says JSON,
+        // the body is not" as a thing that happens; `getRaw` has no such
+        // fallback, so an archive that is truncated or corrupt threw here.
+        // `run()` then answered with Node's parser message, which quotes about
+        // ten characters of the body — text from a saved foreign page, reaching
+        // the model **outside** the untrusted wrapper that the rest of this
+        // handler is careful to route everything through.
+        let article: {
           title?: string;
           byline?: string | null;
           siteName?: string | null;
@@ -280,6 +291,13 @@ export function registerLinkReadTools(
           excerpt?: string | null;
           textContent?: string;
         };
+        try {
+          article = JSON.parse(raw.text) as typeof article;
+        } catch {
+          return textResult(
+            `Linkwarden returned a readable archive for link ${link_id} that is not valid JSON. The archive is probably corrupt; represerve_link recreates it.`
+          );
+        }
 
         const text = article.textContent ?? '';
         const start = offset ?? 0;
@@ -301,15 +319,28 @@ export function registerLinkReadTools(
 
         // Everything below this point was written by whoever controls the saved
         // page, so it goes out through the untrusted wrapper.
+        //
+        // The metadata is clamped for the reason `shape.ts` clamps the same
+        // fields on every other path: Readability copies them straight out of
+        // the page. A `<meta name="description">` of 260 kB becomes a 260 kB
+        // `excerpt`, and unclamped that alone filled the whole result budget —
+        // `text` never appeared, and the cut landed inside the excerpt. `text`
+        // itself needs no clamp here; `max_chars` already bounds it.
+        const metaFollowUp = `call get_link with link_id=${link_id} for the full record`;
         return untrustedResult(
           {
             link_id,
-            title: article.title ?? null,
-            byline: article.byline ?? null,
-            site_name: article.siteName ?? null,
-            published_time: article.publishedTime ?? null,
-            language: article.lang ?? null,
-            excerpt: article.excerpt ?? null,
+            title: clamp(article.title, MAX_NAME_CHARS, metaFollowUp) ?? null,
+            byline: clamp(article.byline, MAX_NAME_CHARS, metaFollowUp) ?? null,
+            site_name:
+              clamp(article.siteName, MAX_NAME_CHARS, metaFollowUp) ?? null,
+            published_time:
+              clamp(article.publishedTime, MAX_NAME_CHARS, metaFollowUp) ??
+              null,
+            language: clamp(article.lang, MAX_NAME_CHARS, metaFollowUp) ?? null,
+            excerpt:
+              clamp(article.excerpt, MAX_DESCRIPTION_CHARS, metaFollowUp) ??
+              null,
             total_chars: text.length,
             offset: start,
             returned_chars: slice.length,

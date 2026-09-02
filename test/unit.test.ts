@@ -190,6 +190,49 @@ describe('result helpers', () => {
     expect(resultText(untrustedResult({ a: 1 }))).toMatch(/"a": 1/);
   });
 
+  it('shrinks the largest field of an oversized envelope, not the document', () => {
+    // The same reasoning `jsonResult` spells out, which `untrustedResult` did
+    // not follow: it sliced the serialized JSON. That cut landed mid-string,
+    // so the model got invalid JSON — and because the recoverable fields come
+    // last, `offset` and `notes` were the first things to go, which is exactly
+    // what a caller needs to ask for the rest.
+    const result = untrustedResult(
+      {
+        excerpt: 'E'.repeat(260_000),
+        text: 'the article',
+        offset: 0,
+        notes: ['Truncated: call again with offset=11'],
+      },
+      'call get_link_content with offset=11'
+    );
+    const text = resultText(result);
+    const body = JSON.parse(text.slice(text.indexOf('{'))) as Record<
+      string,
+      unknown
+    >;
+    expect(body.text).toBe('the article');
+    expect(body.offset).toBe(0);
+    expect(body.notes).toEqual(['Truncated: call again with offset=11']);
+    expect((body.excerpt as string).length).toBeLessThan(260_000);
+    expect(body.truncated).toBeTruthy();
+    expect(text).toMatch(/call get_link_content with offset=11/);
+  });
+
+  it('still slices a plain string, which has no field to shrink', () => {
+    const text = resultText(untrustedResult('y'.repeat(500_000)));
+    expect(text).toMatch(/truncated at 200000 characters/);
+  });
+
+  it('slices an oversized envelope with no string field at all', () => {
+    // Nothing to shrink: an envelope whose bulk is numbers. There is no honest
+    // structured answer left, so the fallback is the old behaviour, and it has
+    // to still produce a warning and a follow-up.
+    const text = resultText(
+      untrustedResult({ counts: Array.from({ length: 90_000 }, (_, i) => i) })
+    );
+    expect(text).toMatch(/truncated at 200000 characters/);
+  });
+
   it('names a follow-up when untrusted content is truncated', () => {
     const text = resultText(
       untrustedResult(
