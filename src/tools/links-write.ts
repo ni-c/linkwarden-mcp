@@ -174,7 +174,10 @@ export function registerLinkWriteTools(
         idempotentHint: false,
         openWorldHint: true,
       },
-      outputSchema: z.object({ created: link }).catchall(z.unknown()),
+      outputSchema: z
+        .object({ created: link })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async ({ url, name, description, collection_id, collection_name, tags }) =>
       run(async () => {
@@ -255,7 +258,10 @@ export function registerLinkWriteTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      outputSchema: z.object({ updated: link }).catchall(z.unknown()),
+      outputSchema: z
+        .object({ updated: link })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async (
       { link_id, name, url, description, collection_id, tags, confirm_token },
@@ -364,7 +370,10 @@ export function registerLinkWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
-      outputSchema: z.object({ link }).catchall(z.unknown()),
+      outputSchema: z
+        .object({ link })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async ({ link_id, pinned }) =>
       run(async () => {
@@ -494,7 +503,8 @@ export function registerLinkWriteTools(
           updated_count: z.number().int(),
           updated_link_ids: z.array(z.number().int()),
         })
-        .catchall(z.unknown()),
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async (
       { link_ids, tags, replace_tags, collection_id, confirm_token },

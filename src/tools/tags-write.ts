@@ -23,10 +23,10 @@ const MAX_TAGS_PER_CALL = 50;
 const archivalFlag = (what: string) =>
   z
     .boolean()
-    .nullish()
     .describe(
       `${what} for links carrying this tag. null inherits the account default.`
-    );
+    )
+    .nullish();
 
 export function registerTagWriteTools(
   server: McpServer,
@@ -73,7 +73,10 @@ export function registerTagWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
-      outputSchema: z.object({ tags: z.array(tag) }).catchall(z.unknown()),
+      outputSchema: z
+        .object({ tags: z.array(tag) })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async ({
       names,
@@ -138,7 +141,10 @@ export function registerTagWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
-      outputSchema: z.object({ updated: tag }).catchall(z.unknown()),
+      outputSchema: z
+        .object({ updated: tag })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async ({ tag_id, name, confirm_token }, mcp) =>
       run(async () => {
@@ -295,7 +301,8 @@ export function registerTagWriteTools(
           new_tag: tag,
           merged_tag_ids: z.array(z.number().int()),
         })
-        .catchall(z.unknown()),
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async ({ tag_ids, new_name, confirm_token }, mcp) =>
       run(async () => {

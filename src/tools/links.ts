@@ -128,7 +128,12 @@ export function registerLinkReadTools(
         ...untrustedFields,
         truncated: truncationNote,
         count: z.number().int(),
-        next_cursor: z.number().int().nullable().optional(),
+        next_cursor: z
+          .number()
+          .int()
+          .describe('Pass as cursor to continue; null when the list ends.')
+          .nullable()
+          .optional(),
         links: z.array(link),
         notes,
       }),
@@ -267,21 +272,35 @@ export function registerLinkReadTools(
           ...untrustedFields,
           truncated: truncationNote,
           link_id: z.number().int(),
-          title: z.string().nullable(),
-          byline: z.string().nullable(),
-          site_name: z.string().nullable(),
-          published_time: z.string().nullable().optional(),
-          lang: z.string().nullable().optional(),
+          title: z.string().describe('The article title.').nullable(),
+          byline: z.string().describe('The article byline.').nullable(),
+          site_name: z.string().describe('The site name.').nullable(),
+          published_time: z
+            .string()
+            .describe('When the article says it was published.')
+            .nullable()
+            .optional(),
+          lang: z.string().describe('Language tag.').nullable().optional(),
           length: z.number().optional(),
-          excerpt: z.string().nullable().optional(),
+          excerpt: z
+            .string()
+            .describe('Short summary of the article.')
+            .nullable()
+            .optional(),
           offset: z.number().int().optional(),
           returned_chars: z.number().int().optional(),
           total_chars: z.number().int().optional(),
-          next_offset: z.number().int().nullable().optional(),
+          next_offset: z
+            .number()
+            .int()
+            .describe('Pass as offset to read on; null at the end of the text.')
+            .nullable()
+            .optional(),
           text: z.string().optional(),
           notes,
         })
-        .catchall(z.unknown()),
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async ({ link_id, offset, max_chars }) =>
       run(async () => {

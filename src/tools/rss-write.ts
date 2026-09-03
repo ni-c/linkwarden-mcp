@@ -88,7 +88,8 @@ export function registerRssWriteTools(
       },
       outputSchema: z
         .object({ created: rssSubscription })
-        .catchall(z.unknown()),
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async ({ name, url, collection_id, collection_name }) =>
       run(async () => {

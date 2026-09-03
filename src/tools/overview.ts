@@ -10,6 +10,7 @@ import { z } from 'zod';
 import {
   link,
   notes,
+  record,
   rssSubscription,
   truncationNote,
   untrustedFields,
@@ -60,13 +61,14 @@ export function registerOverviewReadTools(
         .object({
           ...untrustedFields,
           id: z.number().int().optional(),
-          name: z.string().nullable(),
+          name: z.string().describe('Display name of the account.').nullable(),
           profile_is_private: z.boolean(),
           prevent_duplicate_links: z.boolean(),
-          archival_defaults: z.looseObject({}).optional(),
+          archival_defaults: record.optional(),
           notes,
         })
-        .catchall(z.unknown()),
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async () =>
       run(async () => {
@@ -168,10 +170,20 @@ export function registerOverviewReadTools(
       // numbers the instance keeps about itself.
       outputSchema: z
         .object({
-          links: z.looseObject({}),
-          search_index: z.looseObject({}),
+          // Counters this server assembles itself, so they are described
+          // exactly rather than left open like the passed-through records.
+          links: z.object({
+            pending: z.number().int(),
+            preserved: z.number().int(),
+            failed: z.number().int(),
+          }),
+          search_index: z.object({
+            pending: z.number().int(),
+            indexed: z.number().int(),
+          }),
         })
-        .catchall(z.unknown()),
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async () =>
       run(async () => {
