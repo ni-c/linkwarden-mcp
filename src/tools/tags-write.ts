@@ -1,19 +1,16 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { LinkwardenApi } from '../api.js';
-import {
-  confirmationPrompt,
-  setResourceKey,
-  type ConfirmationStore,
-} from '../confirm.js';
+import { tag } from '../output-schema.js';
+import { setResourceKey } from 'mcp-approval';
+import type { Approver, ConfirmationStore } from 'mcp-approval';
 import {
   assertNotErrorMessage,
   errorResult,
   jsonResult,
   run,
-  textResult,
 } from '../result.js';
+
+import type { LinkwardenApi } from '../api.js';
 import { confirmToken, idPath, tagId } from '../schema.js';
 import { shapeTag, type RawTag } from '../shape.js';
 
@@ -26,15 +23,16 @@ const MAX_TAGS_PER_CALL = 50;
 const archivalFlag = (what: string) =>
   z
     .boolean()
-    .nullish()
     .describe(
       `${what} for links carrying this tag. null inherits the account default.`
-    );
+    )
+    .nullish();
 
 export function registerTagWriteTools(
   server: McpServer,
   api: LinkwardenApi,
-  confirmations: ConfirmationStore
+  confirmations: ConfirmationStore,
+  approval: Approver
 ): void {
   server.registerTool(
     'create_tags',
@@ -48,7 +46,7 @@ export function registerTagWriteTools(
         'Note that tags are usually created implicitly by create_link and ' +
         'update_link; use this tool when the archival settings matter, or to create ' +
         'a tag before any link uses it.',
-      inputSchema: {
+      inputSchema: z.object({
         names: z
           .array(z.string().trim().min(1).max(50))
           .min(1)
@@ -66,8 +64,19 @@ export function registerTagWriteTools(
           'Submit the URL to the Internet Archive'
         ),
         ai_tag: archivalFlag('Let the configured AI model assign this tag'),
+      }),
+      annotations: {
+        // Additive, and get-or-create: asking for a tag that exists returns
+        // it rather than making a second.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { idempotentHint: true },
+      outputSchema: z
+        .object({ tags: z.array(tag) })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async ({
       names,
@@ -116,15 +125,70 @@ export function registerTagWriteTools(
       description:
         'Renames a tag; every link carrying it keeps it. Tag names are unique per ' +
         'account, so renaming a tag to a name that already exists fails — use ' +
-        'merge_tags to fold two tags into one instead.',
-      inputSchema: {
+        'merge_tags to fold two tags into one instead. Asks a person first; ' +
+        'where the client cannot show a dialog, call once to receive a token ' +
+        'and again with it.',
+      inputSchema: z.object({
         tag_id: tagId,
         name: z.string().trim().min(1).max(50).describe('New tag name'),
+        confirm_token: confirmToken,
+      }),
+      annotations: {
+        // Replaces a name somebody chose, on every link that carries the tag.
+        // wikijs guards update_tag for the same reason.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { idempotentHint: true },
+      outputSchema: z
+        .object({ updated: tag })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
-    async ({ tag_id, name }) =>
+    async ({ tag_id, name, confirm_token }, mcp) =>
       run(async () => {
+        // One call, every link that carries the tag. Linkwarden keeps no
+        // history of what a tag used to be called, and a saved search or a
+        // habit built on the old name simply stops matching.
+        //
+        // Bound to the id *and* the new name: an approval for "rename 7 to
+        // reading" must not execute "rename 7 to archive".
+        //
+        // Both targets are labelled, because `setResourceKey` sorts its list
+        // and `String(tag_id)` erases the difference between an id and a name.
+        // Unlabelled, `{tag_id: 7, name: "12"}` and `{tag_id: 12, name: "7"}`
+        // both fingerprint `["7","12"]` — one key for two different renames,
+        // and both pass the schema, since a purely numeric tag name is legal
+        // (a year, an issue number). Prefixing the targets keeps the two
+        // positions apart.
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `rename tag ${tag_id}`,
+            consequence:
+              'Every link that carries the tag shows the new name, and the old ' +
+              'one is not recoverable from here.',
+            resourceKey: setResourceKey('rename_tag', [
+              `tag:${tag_id}`,
+              `name:${name}`,
+            ]),
+            token: confirm_token,
+            details: [{ label: 'New name', value: name }],
+            toolName: 'rename_tag',
+            hint: 'Tick to rename it, leave it to cancel.',
+          }
+        );
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
+        }
+        if (outcome.decision === 'declined') {
+          return errorResult(`The user declined. rename_tag did nothing.`);
+        }
+        if (outcome.decision === 'pending') return outcome.result;
+
         const updated = await api.put(idPath('/tags', tag_id), { name });
         assertNotErrorMessage(updated, 'Renaming the tag');
         return jsonResult({ updated: shapeTag(updated as RawTag) });
@@ -139,42 +203,61 @@ export function registerTagWriteTools(
         'Deletes one or more tags. The links keep existing, they just lose the tag. ' +
         'Two-step: the first call returns a confirmation token bound to exactly this ' +
         'set of ids.',
-      inputSchema: {
+      inputSchema: z.object({
         tag_ids: z
           .array(tagId)
           .min(1)
           .max(MAX_TAGS_PER_CALL)
           .describe(`Tag ids, at most ${MAX_TAGS_PER_CALL}`),
         confirm_token: confirmToken,
+      }),
+      annotations: {
+        // Removed from every link that carried them; the links stay.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { destructiveHint: true },
+      outputSchema: z.object({
+        deleted_count: z.number().int(),
+        deleted_tag_ids: z.array(z.number().int()),
+      }),
     },
-    async ({ tag_ids, confirm_token }) =>
+    async ({ tag_ids, confirm_token }, mcp) =>
       run(async () => {
         const ids = [...new Set(tag_ids)];
         const resource = setResourceKey('delete_tags', ids.map(String));
 
-        if (!confirmations.consume(resource, confirm_token)) {
-          if (confirm_token !== undefined) {
-            return errorResult(
-              'The confirmation token is invalid, expired, or was issued for a ' +
-                'different set of tags. Call delete_tags without a token to get a new one.'
-            );
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `permanently delete ${ids.length} tag(s) (ids ${ids.join(', ')}) and remove them from every link`,
+            consequence:
+              'The tags are removed from every link that carried them, and that association is not recoverable from here.',
+            fallbackNote:
+              '\nCall list_tags first if you need to know how many links each one affects.',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'delete_tags',
+            hint: 'Tick to go ahead, leave it to cancel.',
           }
-          const token = confirmations.issue(resource);
-          return textResult(
-            confirmationPrompt(
-              `permanently delete ${ids.length} tag(s) (ids ${ids.join(', ')}) and remove them from every link`,
-              token,
-              confirmations.ttlMinutes
-            ) +
-              '\nCall list_tags first if you need to know how many links each one affects.'
-          );
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
         }
+        if (outcome.decision === 'declined') {
+          return errorResult(`The user declined. delete_tags did nothing.`);
+        }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const result = await api.delete('/tags', { tagIds: ids });
         assertNotErrorMessage(result, 'Deleting the tags');
-        return textResult(`Deleted ${ids.length} tag(s): ${ids.join(', ')}.`);
+        return jsonResult({ deleted_count: ids.length, deleted_tag_ids: ids });
       })
   );
 
@@ -190,7 +273,7 @@ export function registerTagWriteTools(
         'existing name fails. And the per-tag archival settings of the source tags ' +
         'are not carried over; set them again with create_tags afterwards if they ' +
         'mattered.',
-      inputSchema: {
+      inputSchema: z.object({
         tag_ids: z
           .array(tagId)
           .min(1)
@@ -203,10 +286,25 @@ export function registerTagWriteTools(
           .max(50)
           .describe('Name of the new tag. Must not exist yet.'),
         confirm_token: confirmToken,
+      }),
+      annotations: {
+        // The originals are deleted and their per-tag archival settings are
+        // not carried over. Not idempotent — the sources no longer exist for
+        // a second run.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
       },
-      annotations: { destructiveHint: true },
+      outputSchema: z
+        .object({
+          new_tag: tag,
+          merged_tag_ids: z.array(z.number().int()),
+        })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
-    async ({ tag_ids, new_name, confirm_token }) =>
+    async ({ tag_ids, new_name, confirm_token }, mcp) =>
       run(async () => {
         const ids = [...new Set(tag_ids)];
         // The target name is part of the key: a confirmation for merging into one
@@ -216,23 +314,31 @@ export function registerTagWriteTools(
           ids.map(String)
         );
 
-        if (!confirmations.consume(resource, confirm_token)) {
-          if (confirm_token !== undefined) {
-            return errorResult(
-              'The confirmation token is invalid, expired, or was issued for a ' +
-                'different set of tags or a different target name. Call merge_tags ' +
-                'without a token to get a new one.'
-            );
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `merge ${ids.length} tag(s) (ids ${ids.join(', ')}) into one new tag, deleting the originals and losing their archival settings`,
+            consequence:
+              'The original tags are deleted and their per-tag archival ' +
+              'settings are not carried over; neither can be restored from here.',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'merge_tags',
+            hint: 'Tick to go ahead, leave it to cancel.',
           }
-          const token = confirmations.issue(resource);
-          return textResult(
-            confirmationPrompt(
-              `merge ${ids.length} tag(s) (ids ${ids.join(', ')}) into one new tag, deleting the originals and losing their archival settings`,
-              token,
-              confirmations.ttlMinutes
-            )
-          );
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
         }
+        if (outcome.decision === 'declined') {
+          return errorResult(`The user declined. merge_tags did nothing.`);
+        }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const result = await api.put('/tags/merge', {
           tagIds: ids,

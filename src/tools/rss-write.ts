@@ -1,18 +1,13 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { LinkwardenApi } from '../api.js';
-import {
-  confirmationPrompt,
-  setResourceKey,
-  type ConfirmationStore,
-} from '../confirm.js';
+import { rssSubscription } from '../output-schema.js';
+import { setResourceKey } from 'mcp-approval';
+import type { Approver, ConfirmationStore } from 'mcp-approval';
 import {
   assertNotErrorMessage,
   errorResult,
   jsonResult,
   run,
-  textResult,
 } from '../result.js';
 import {
   assertFetchableUrl,
@@ -22,12 +17,15 @@ import {
   idPath,
   rssSubscriptionId,
 } from '../schema.js';
+
+import type { LinkwardenApi } from '../api.js';
 import { shapeRssSubscription, type RawRssSubscription } from '../shape.js';
 
 export function registerRssWriteTools(
   server: McpServer,
   api: LinkwardenApi,
-  confirmations: ConfirmationStore
+  confirmations: ConfirmationStore,
+  approval: Approver
 ): void {
   server.registerTool(
     'create_rss_subscription',
@@ -43,9 +41,17 @@ export function registerRssWriteTools(
         'the request is made. That check covers the feed URL only — Linkwarden ' +
         'creates and preserves a link for every entry the feed contains, and on ' +
         'versions before 2.14 it does not check those addresses at all. Do not ' +
-        'subscribe to a feed you do not trust. Subscription names must be unique ' +
-        'per account, and instances cap the number of subscriptions (20 by default).',
-      inputSchema: {
+        'subscribe to a feed you do not trust.\n\n' +
+        'Linkwarden 2.14 and later apply their own check as well, and it is ' +
+        'stricter: the feed URL is resolved and any address on a private or ' +
+        'loopback range is refused with "URL resolves to a blocked internal ' +
+        'hostname". A feed on the same private network as the instance — a ' +
+        'company intranet, another container — therefore cannot be subscribed ' +
+        'at all, however legitimate. That refusal comes from Linkwarden, not ' +
+        'from here, and no argument changes it.\n\n' +
+        'Subscription names must be unique per account, and instances cap the ' +
+        'number of subscriptions (20 by default).',
+      inputSchema: z.object({
         name: z
           .string()
           .trim()
@@ -66,8 +72,24 @@ export function registerRssWriteTools(
           .describe(
             'Collection by name; it is created if it does not exist. Mutually exclusive with collection_id.'
           ),
+      }),
+      annotations: {
+        // Additive.
+        //
+        // Open-world for `create_link`'s reason: the caller picks the address
+        // and Linkwarden fetches it. The broader one of the two, in fact —
+        // Linkwarden pulls the feed immediately and then creates *and
+        // archives* a link for every `<item><link>` in it, so one approved
+        // address becomes an unbounded set of fetches this server never sees.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
       },
-      annotations: {},
+      outputSchema: z
+        .object({ created: rssSubscription })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async ({ name, url, collection_id, collection_name }) =>
       run(async () => {
@@ -105,40 +127,60 @@ export function registerRssWriteTools(
       description:
         'Stops polling a feed. Links that were already created from it stay where ' +
         'they are — only the subscription goes away.',
-      inputSchema: {
+      inputSchema: z.object({
         rss_subscription_id: rssSubscriptionId,
         confirm_token: confirmToken,
+      }),
+      annotations: {
+        // Items already imported stay; nothing further is fetched.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { destructiveHint: true },
+      outputSchema: z.object({
+        deleted_rss_subscription_id: z.number().int(),
+        note: z.string(),
+      }),
     },
-    async ({ rss_subscription_id, confirm_token }) =>
+    async ({ rss_subscription_id, confirm_token }, mcp) =>
       run(async () => {
         const resource = setResourceKey('delete_rss_subscription', [
           String(rss_subscription_id),
         ]);
-        if (!confirmations.consume(resource, confirm_token)) {
-          if (confirm_token !== undefined) {
-            return errorResult(
-              'The confirmation token is invalid, expired, or was issued for a ' +
-                'different subscription. Call delete_rss_subscription without a ' +
-                'token to get a new one.'
-            );
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `delete RSS subscription ${rss_subscription_id}, so its feed is no longer polled`,
+            consequence:
+              'Items already imported stay; nothing further is fetched from that feed.',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'delete_rss_subscription',
+            hint: 'Tick to go ahead, leave it to cancel.',
           }
-          const token = confirmations.issue(resource);
-          return textResult(
-            confirmationPrompt(
-              `delete RSS subscription ${rss_subscription_id}, so its feed is no longer polled`,
-              token,
-              confirmations.ttlMinutes
-            )
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
+        }
+        if (outcome.decision === 'declined') {
+          return errorResult(
+            `The user declined. delete_rss_subscription did nothing.`
           );
         }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const deleted = await api.delete(idPath('/rss', rss_subscription_id));
         assertNotErrorMessage(deleted, 'Deleting the RSS subscription');
-        return textResult(
-          `RSS subscription ${rss_subscription_id} deleted. The links it already created remain.`
-        );
+        return jsonResult({
+          deleted_rss_subscription_id: rss_subscription_id,
+          note: 'The links it already created remain.',
+        });
       })
   );
 }

@@ -16,10 +16,7 @@
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { createServer } from '../dist/server.js';
 import { ESSENTIAL_TOOLS } from '../dist/tools/catalogue.js';
 
@@ -33,6 +30,7 @@ async function listTools() {
     token: 'placeholder',
     insecureTls: false,
     readOnly: false,
+    elicitation: true,
   });
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair();
@@ -52,11 +50,33 @@ function typeName(schema) {
   if (Array.isArray(schema.enum)) {
     return schema.enum.map((v) => `\`"${v}"\``).join(' \\| ');
   }
+  // A nullable field arrives as `anyOf` branches rather than as a `type` array:
+  // the array form is what several MCP clients read as a single type and then
+  // drop, so the schemas avoid it. The page still says "boolean,null".
+  if (Array.isArray(schema.anyOf)) {
+    return [...new Set(schema.anyOf.map(typeName))].join(',');
+  }
+  if (Array.isArray(schema.type)) return schema.type.join(',');
   if (schema.type === 'array') {
     return `${typeName(schema.items)}[]`;
   }
   if (schema.type === 'object') return 'object';
   return schema.type ?? 'unknown';
+}
+
+/**
+ * The description of a field, wherever the schema kept it.
+ *
+ * On an `anyOf` it sits on the branch it describes rather than beside them:
+ * that is what keeps zod from folding the branches back into a `type` array.
+ */
+function describe(schema) {
+  if (!schema) return '';
+  if (schema.description) return schema.description;
+  if (Array.isArray(schema.anyOf)) {
+    return schema.anyOf.map(describe).find(Boolean) ?? '';
+  }
+  return '';
 }
 
 /**
@@ -83,16 +103,29 @@ function escapeCell(text) {
 }
 
 function renderTool(tool) {
+  // `?? true` rather than a plain read: the specification gives
+  // destructiveHint a default of *true*, so a tool that omits it is claiming
+  // to be destructive. Reading it as falsy would have this page understate
+  // exactly the tools whose annotation somebody forgot.
   const kind = tool.annotations?.readOnlyHint
     ? 'read-only'
-    : tool.annotations?.destructiveHint
+    : (tool.annotations?.destructiveHint ?? true)
       ? 'write, destructive'
       : 'write';
   // Generated from the same constant the filter reads, so "which tools does
   // `essential` select" cannot be written down twice and drift.
+  // Read off the schema rather than from a list kept next to it: a tool is
+  // guarded exactly when it accepts the fallback token, and that is a fact
+  // about this server's own registration.
+  const asks = Object.hasOwn(
+    tool.inputSchema?.properties ?? {},
+    'confirm_token'
+  )
+    ? ' 👤'
+    : '';
   const preset = ESSENTIAL_TOOLS.includes(tool.name) ? ', **essential**' : '';
 
-  const lines = [`### \`${tool.name}\``, ''];
+  const lines = [`### \`${tool.name}\`${asks}`, ''];
   if (tool.title) lines.push(`**${tool.title}** — ${kind}${preset}`, '');
   lines.push(escapeCell(tool.description), '');
 
@@ -112,7 +145,7 @@ function renderTool(tool) {
   for (const name of names) {
     const schema = properties[name];
     lines.push(
-      `| \`${name}\` | ${typeName(schema)} | ${required.has(name) ? 'yes' : 'no'} | ${escapeCell(schema?.description)} |`
+      `| \`${name}\` | ${typeName(schema)} | ${required.has(name) ? 'yes' : 'no'} | ${escapeCell(describe(schema))} |`
     );
   }
   lines.push('');
@@ -141,9 +174,25 @@ function render(tools) {
     `\`LINKWARDEN_ALLOW_TOOLS=essential\` selects the ${ESSENTIAL_TOOLS.length} marked **essential**`,
     'below — see [choosing the tools that load](/guide/configuration#choosing-the-tools-that-load).',
     '',
-    'Tools marked **write, destructive** need a confirmation token: call them once',
-    'without `confirm_token` to get one, then again with it. The token is bound to the',
-    'exact target and expires after five minutes. See [Security](/guide/security).',
+    '👤 marks a tool that **asks a person** before it acts, through MCP',
+    'elicitation — a dialog the model cannot answer on its behalf. Where the',
+    'client cannot show one, it falls back to a two-call `confirm_token` bound',
+    'to the exact target and expiring after five minutes, and says which of the',
+    'two it was. `ELICITATION=false` takes that fallback deliberately; it never',
+    'removes the guard. See [Asking a person](/guide/approval).',
+    '',
+    'Every tool declares all four MCP annotations — `readOnlyHint`,',
+    '`destructiveHint`, `idempotentHint`, `openWorldHint`. They are a hint a',
+    'client may ignore; the dialog is enforced here and cannot be. The two lists',
+    'are deliberately not the same one: `create_link` writes and is not asked',
+    'about, `update_collection` is asked about only when it *publishes*.',
+    '',
+    'Every tool declares an `outputSchema` and answers with `structuredContent` beside',
+    'the text block, so a client can use a result without parsing prose. The reading',
+    'tools carry `untrusted: true` and `source: "linkwarden"` as fields of that',
+    'object — the note in `notes` is prose a client can read but not check. The write',
+    'tools are without it: they report an id this server was given and a count it',
+    'made.',
     '',
     '## Read tools',
     '',

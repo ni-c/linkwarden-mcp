@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { unwrapEnvelope } from '../src/api.js';
 import { looksLikeErrorMessage, preservedFormats } from '../src/shape.js';
 import {
-  connectClient,
+  connect,
   emptyResponse,
   envelopeResponse,
   linkFixture,
@@ -11,7 +11,7 @@ import {
   stubFetch,
   tagFixture,
   textResponse,
-} from './helpers.js';
+} from './harness.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -105,7 +105,7 @@ describe('error handling', () => {
     // A Next.js route without a branch for the method used falls through and
     // answers 200 with nothing at all.
     stubFetch(() => emptyResponse());
-    const client = await connectClient();
+    const client = await connect({}, 'accept');
     const result = await client.callTool({
       name: 'rename_tag',
       arguments: { tag_id: 3, name: 'refs' },
@@ -123,7 +123,7 @@ describe('error handling', () => {
         'text/html'
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'list_collections',
       arguments: {},
@@ -137,7 +137,7 @@ describe('error handling', () => {
 
   it('truncates a very long error body', async () => {
     stubFetch(() => textResponse('x'.repeat(5000), 500));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'list_collections',
       arguments: {},
@@ -149,7 +149,7 @@ describe('error handling', () => {
 
   it('adds the duplicate-link hint on HTTP 409', async () => {
     stubFetch(() => envelopeResponse('Link already exists', 409));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'create_link',
       arguments: { url: 'https://example.net/already-there' },
@@ -161,7 +161,7 @@ describe('error handling', () => {
 
   it('explains a 403 in terms of collection membership', async () => {
     stubFetch(() => envelopeResponse('Permission denied.', 403));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'get_collection',
       arguments: { collection_id: 7 },
@@ -172,7 +172,7 @@ describe('error handling', () => {
 
   it('reports a non-JSON success body as text rather than crashing', async () => {
     stubFetch(() => textResponse('plain text answer'));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'get_worker_stats',
       arguments: {},
@@ -184,7 +184,7 @@ describe('error handling', () => {
   it('survives a link that comes back without a collection', async () => {
     // update_link cannot build a safe body without the collection owner.
     stubFetch(() => envelopeResponse(linkFixture({ collection: undefined })));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'update_link',
       arguments: { link_id: 42, name: 'New name' },
@@ -196,7 +196,7 @@ describe('error handling', () => {
 
   it('reports a missing link before trying to write to it', async () => {
     const calls = stubFetch(() => envelopeResponse(null));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'update_link',
       arguments: { link_id: 999, name: 'New name' },
@@ -209,7 +209,7 @@ describe('error handling', () => {
 
 describe('input bounds', () => {
   it('rejects an empty bulk id list', async () => {
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'bulk_delete_links',
       arguments: { link_ids: [] },
@@ -218,7 +218,7 @@ describe('input bounds', () => {
   });
 
   it('rejects a bulk id list beyond the cap', async () => {
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'bulk_delete_links',
       arguments: { link_ids: Array.from({ length: 201 }, (_, i) => i + 1) },
@@ -227,7 +227,7 @@ describe('input bounds', () => {
   });
 
   it('rejects a negative or zero id', async () => {
-    const client = await connectClient();
+    const client = await connect();
     for (const id of [0, -1]) {
       const result = await client.callTool({
         name: 'get_link',
@@ -238,7 +238,7 @@ describe('input bounds', () => {
   });
 
   it('rejects an unknown sort name', async () => {
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'search_links',
       arguments: { sort: 'whatever' },
@@ -247,7 +247,7 @@ describe('input bounds', () => {
   });
 
   it('rejects a max_chars beyond the cap', async () => {
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'get_link_content',
       arguments: { link_id: 42, max_chars: 1_000_000 },
@@ -256,7 +256,7 @@ describe('input bounds', () => {
   });
 
   it('caps the number of tags per create_tags call', async () => {
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'create_tags',
       arguments: { names: Array.from({ length: 51 }, (_, i) => `t${i}`) },
@@ -270,7 +270,7 @@ describe('insecure TLS', () => {
     // The scoped undici dispatcher replaces global fetch, which is exactly why
     // tests must not silently pass through the secure path.
     const calls = stubFetch(() => envelopeResponse([tagFixture()]));
-    const client = await connectClient({ insecureTls: true });
+    const client = await connect({ insecureTls: true });
     await client.callTool({ name: 'list_collections', arguments: {} });
     expect(calls).toHaveLength(0);
   });
@@ -290,7 +290,7 @@ describe('a single hostile record cannot fill the result', () => {
         })
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const text = resultText(
       await client.callTool({ name: 'get_link', arguments: { link_id: 42 } })
     );
@@ -314,7 +314,7 @@ describe('response size cap', () => {
           },
         })
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'list_collections',
       arguments: {},
@@ -344,7 +344,7 @@ describe('response size cap', () => {
         { status: 200, headers: { 'content-type': 'application/json' } }
       );
     });
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'list_collections',
       arguments: {},
@@ -369,7 +369,7 @@ describe('response bodies without a readable stream', () => {
           text: () => Promise.resolve(JSON.stringify({ response: [] })),
         }) as unknown as Response
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'list_collections',
       arguments: {},
@@ -390,7 +390,7 @@ describe('response bodies without a readable stream', () => {
           text: () => Promise.resolve('x'.repeat(9 * 1024 * 1024)),
         }) as unknown as Response
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'list_collections',
       arguments: {},

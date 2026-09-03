@@ -35,10 +35,17 @@ Treat every environment variable this server reads as a secret. The MCP client
 process, and therefore the model driving it, sees every tool result — do not point
 this server at a system whose data you would not put in a model's context.
 
-Destructive operations require a server-generated confirmation token that is bound to
-the specific target; a model cannot satisfy that gate on its own. Data returned from
-the upstream API is untrusted input: it is marked as such, and confirmation prompts
-never quote it.
+Destructive operations **ask a person** through MCP elicitation: a dialog raised by the
+server and shown by the client, which the model cannot answer on its behalf, and which
+nothing proceeds without. Where the client cannot show one they fall back to a
+server-generated token bound to the specific target, which proves the call was made
+twice with the same arguments and nothing more; the fallback text says so rather than
+implying somebody approved. `ELICITATION=false` moves a capable client onto it
+deliberately — it does not remove the guard, and the server prints one line at startup
+saying it is off.
+
+Data returned from the upstream API is untrusted input: it is marked as such, and
+confirmation prompts never quote it.
 
 ## Bookmarking a URL is a server-side fetch
 
@@ -91,7 +98,9 @@ Four things this does not cover, and cannot:
   the URL either came through this server and was checked then, or it came from
   Linkwarden itself, where this server has no say. On an instance whose stored links
   predate this guard, that does mean it can refresh a stale internal read rather than
-  merely re-expose an old one.
+  merely re-expose an old one. Its confirmation dialog therefore names the **host**
+  the re-archive will fetch — only the host, since the path and the title are prose
+  from a foreign page.
 
 Finally, the check itself makes a DNS query from the machine running this server for
 every hostname a caller supplies — before any request reaches Linkwarden. That is a
@@ -101,3 +110,25 @@ runs the resolver.
 Where Linkwarden itself sits on the network is the boundary that actually holds. If it
 runs somewhere that can reach a metadata service or an unauthenticated admin port, put
 that out of its reach there rather than relying on this check.
+
+## What the confirmation proves
+
+Both confirmation paths bind an answer to **one operation with one set of arguments**:
+the two-call `confirm_token` through a one-use entry in the store, the elicitation reply
+through a sealed (HMAC) `requestState` carrying the resource key. Neither proves the
+answer is _recent_. A sealed state that opens onto an operation opens onto it whenever
+it is replayed.
+
+No replay defence is built, because in this deployment shape there is nothing to replay:
+
+- The sealing key is 32 random bytes per process, and this is a stdio server spawned per
+  session, so a state sealed in one session cannot be opened in the next.
+- `requestState` only crosses the wire on protocol revision `2026-07-28`. This server
+  does not set `supportedProtocolVersions`, so it takes the SDK's default list, which
+  ends at `2025-11-25`; on that revision the SDK bridges the elicitation server-side and
+  the value never leaves the process.
+- The `confirm_token` path is single-use and expires after five minutes.
+
+If any of those changes — a negotiated `2026-07-28`, or two processes serving the two
+halves of one flow with a shared key — a nonce becomes necessary. The approvals worth
+stealing here are `delete_link`, `bulk_delete_links` and `delete_collection`.

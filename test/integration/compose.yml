@@ -1,0 +1,78 @@
+# Throwaway Linkwarden for `npm run test:integration`.
+#
+# Not a managed stack: brought up, filled by test/integration/bootstrap.ts, and
+# destroyed with `down -v` afterwards. The suite calls every tool in the
+# catalogue, bulk deletes included, so nothing here may be a bookmark
+# collection anybody keeps.
+#
+# Bound to 127.0.0.1 only.
+services:
+  linkwarden:
+    # Overridable so the weekly CI run can point at :latest and report drift
+    # without changing what the PR gate tests.
+    # 2.16.2, not something older: `GET /api/v1/worker` — what
+    # `get_worker_stats` reads — does not exist before 2.14, and answers a 404
+    # whose HTML body the server correctly refuses to quote. The result reads
+    # like a wrong id rather than a missing endpoint.
+    image: ${LINKWARDEN_IMAGE:-ghcr.io/linkwarden/linkwarden:v2.16.2}
+    environment:
+      DATABASE_URL: postgresql://linkwarden:integration-not-a-secret@db:5432/linkwarden
+      NEXTAUTH_SECRET: integration-only-not-a-secret
+      NEXTAUTH_URL: http://127.0.0.1:${LINKWARDEN_PORT:-3010}/api/v1/auth
+      # Meilisearch is not decoration. Without it Linkwarden falls back to a
+      # LIKE query and the search *operators* stop working — a query with
+      # `name:` or `tag:` is then matched as one literal string, so a search
+      # that should return two links returns none, with no error anywhere.
+      MEILI_HOST: http://meilisearch:7700
+      MEILI_MASTER_KEY: integration-only-not-a-secret
+      # The archive worker fetches every saved page. Left on, it would reach
+      # the public internet for each link the suite creates; the preservation
+      # tools are exercised against what it reports rather than against
+      # finished archives.
+      NEXT_PUBLIC_DISABLE_REGISTRATION: 'false'
+    depends_on:
+      db:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+      site:
+        condition: service_started
+    ports:
+      # Overridable because 3010 is a popular port and a workstation that
+      # already runs something there should not need a patched compose file.
+      # Set LINKWARDEN_PORT; the suite reads the same variable.
+      - '127.0.0.1:${LINKWARDEN_PORT:-3010}:3000'
+
+  # A page and a feed Linkwarden can reach, on the compose network and nowhere
+  # else. Bookmarking something on the public internet would make every run
+  # depend on somebody else's uptime, on being polite to them, and on the
+  # machine having outbound internet at all.
+  site:
+    image: ${NGINX_IMAGE:-nginx:1.31-alpine}
+    volumes:
+      - ./site:/usr/share/nginx/html:ro
+    # Deliberately not published: only Linkwarden needs to reach it.
+    expose:
+      - '80'
+
+  db:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_USER: linkwarden
+      POSTGRES_PASSWORD: integration-not-a-secret
+      POSTGRES_DB: linkwarden
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U linkwarden -d linkwarden']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  meilisearch:
+    image: ${MEILISEARCH_IMAGE:-getmeili/meilisearch:v1.53.1}
+    environment:
+      MEILI_MASTER_KEY: integration-only-not-a-secret
+      MEILI_NO_ANALYTICS: 'true'
+    tmpfs:
+      - /meili_data

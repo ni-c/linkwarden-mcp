@@ -15,9 +15,25 @@ and `LINKWARDEN_DENY_TOOLS` narrow the list to the ones you want, and
 `LINKWARDEN_ALLOW_TOOLS=essential` selects the 8 marked **essential**
 below — see [choosing the tools that load](/guide/configuration#choosing-the-tools-that-load).
 
-Tools marked **write, destructive** need a confirmation token: call them once
-without `confirm_token` to get one, then again with it. The token is bound to the
-exact target and expires after five minutes. See [Security](/guide/security).
+👤 marks a tool that **asks a person** before it acts, through MCP
+elicitation — a dialog the model cannot answer on its behalf. Where the
+client cannot show one, it falls back to a two-call `confirm_token` bound
+to the exact target and expiring after five minutes, and says which of the
+two it was. `ELICITATION=false` takes that fallback deliberately; it never
+removes the guard. See [Asking a person](/guide/approval).
+
+Every tool declares all four MCP annotations — `readOnlyHint`,
+`destructiveHint`, `idempotentHint`, `openWorldHint`. They are a hint a
+client may ignore; the dialog is enforced here and cannot be. The two lists
+are deliberately not the same one: `create_link` writes and is not asked
+about, `update_collection` is asked about only when it *publishes*.
+
+Every tool declares an `outputSchema` and answers with `structuredContent` beside
+the text block, so a client can use a result without parsing prose. The reading
+tools carry `untrusted: true` and `source: "linkwarden"` as fields of that
+object — the note in `notes` is prose a client can read but not check. The write
+tools are without it: they report an id this server was given and a count it
+made.
 
 ## Read tools
 
@@ -25,7 +41,7 @@ exact target and expires after five minutes. See [Security](/guide/security).
 
 **Search and list links** — read-only, **essential**
 
-Searches bookmarks, or lists them when no query is given. This is the way to find links — there is no separate list tool, and the older /links listing route is deprecated upstream. Plain text matches the title, URL, description and tag names of a link. IMPORTANT: the field-filter syntax below only works on instances that run Meilisearch. Linkwarden parses those filters exclusively in its Meilisearch branch; without it the whole query is matched as one literal substring, so `tag:news` searches for the characters "tag:news" and finds nothing. Use the collection_id, tag_id and pinned_only arguments instead — those are applied by the database and work either way. list_collections and list_tags give you the ids. Where Meilisearch is available the filters are: url: name: description: type: collection: tag: pinned: public: before: after: Quote values that contain spaces, e.g. collection:"Read later". Prefix a filter with ! to negate it, e.g. !tag:archive. pinned: and public: take true or false; before: and after: take a date such as 2026-01-31. If the instance sets SEARCH_FILTER_LIMIT, field filters beyond that count are dropped silently, so prefer few, specific filters. Returns at most 100 links plus a next_cursor for the following page. Article text is not included; use get_link_content for that.
+Searches bookmarks, or lists them when no query is given. This is the way to find links — there is no separate list tool, and the older /links listing route is deprecated upstream. Plain text matches the title, URL, description and tag names of a link. IMPORTANT: the field-filter syntax below only works on instances that run Meilisearch. Linkwarden parses those filters exclusively in its Meilisearch branch; without it the whole query is matched as one literal substring, so `tag:news` searches for the characters "tag:news" and finds nothing. Use the collection_id, tag_id and pinned_only arguments instead — those are applied by the database and work either way. list_collections and list_tags give you the ids. Where Meilisearch is available the filters are: url: name: description: type: collection: tag: pinned: public: before: after: These filters match the WHOLE value, not a substring. `name:Report` does not find a link called "Quarterly Report" — it finds one whose title is exactly "Report". Quote values that contain spaces: name:"Quarterly Report". An empty result from a field filter therefore usually means the value was a fragment, not that the filter is unsupported. Plain text without a filter DOES match substrings, so search for the fragment on its own when unsure. Prefix a filter with ! to negate it, e.g. !tag:archive. pinned: and public: take true or false; before: and after: take a date such as 2026-01-31. If the instance sets SEARCH_FILTER_LIMIT, field filters beyond that count are dropped silently, so prefer few, specific filters. Returns at most 100 links plus a next_cursor for the following page. Article text is not included; use get_link_content for that. Indexing is asynchronous where Meilisearch is used: a link created moments ago is not searchable yet. An empty result straight after a write means the index has not caught up, not that the write failed — get_link by id confirms it exists.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -50,7 +66,7 @@ Fetches one bookmark with its tags, collection and which preserved formats exist
 
 **Read the preserved text of a link** — read-only, **essential**
 
-Returns the readable article text Linkwarden extracted and stored when it preserved the page, so a saved bookmark can be read without fetching the live site. Only the readable format is served: the screenshot, PDF and single-file HTML archives are binary or raw markup and are not useful as text. Long articles are returned in slices — pass the offset from the previous result to continue. If the link has no readable archive, the tool says so and represerve_link can create one.
+Returns the readable article text Linkwarden extracted and stored when it preserved the page, so a saved bookmark can be read without fetching the live site. Only the readable format is served: the screenshot, PDF and single-file HTML archives are binary or raw markup and are not useful as text. Long articles are returned in slices — pass the offset from the previous result to continue. If the link has no readable archive, the tool says so and represerve_link can create one. Preservation is asynchronous: Linkwarden queues the page and a worker drives a headless browser over it, which takes minutes. A link created moments ago has no readable archive yet, and that is not an error — get_worker_stats shows the queue.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -147,9 +163,9 @@ Saves a bookmark. Linkwarden fetches the page title itself when no name is given
 | `collection_name` | string | no | Target collection by name; it is created if it does not exist. Mutually exclusive with collection_id. |
 | `tags` | string[] | no | Tag names. Tags that do not exist yet are created. |
 
-### `update_link`
+### `update_link` 👤
 
-**Update a link** — write, **essential**
+**Update a link** — write, destructive, **essential**
 
 Changes a bookmark. Fields that are not given stay as they are: the tool reads the link first and merges, because the underlying route replaces the whole record and would otherwise clear the title, description and every tag. The tags argument REPLACES the tag list — pass the full set you want. Moving a link to another collection only works for the collection owner. Changing the URL is destructive and needs a confirmation token: Linkwarden deletes every preserved copy of the old page (screenshot, PDF, readable text, single-file HTML) and starts over.
 
@@ -174,7 +190,7 @@ Pins a link to the account's dashboard, or removes the pin. Pins are per account
 | `link_id` | integer | yes | Numeric id of the link — the "id" field returned by search_links, not its title or URL |
 | `pinned` | boolean | yes | true to pin, false to unpin |
 
-### `delete_link`
+### `delete_link` 👤
 
 **Delete a link** — write, destructive, **essential**
 
@@ -185,7 +201,7 @@ Deletes a bookmark and every preserved copy of the page. Two-step: the first cal
 | `link_id` | integer | yes | Numeric id of the link — the "id" field returned by search_links, not its title or URL |
 | `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `bulk_update_links`
+### `bulk_update_links` 👤
 
 **Retag or move many links at once** — write, destructive
 
@@ -199,7 +215,7 @@ Applies the same tag list and/or target collection to a set of links. Cheaper th
 | `collection_id` | integer | no | Move every link to this collection (owner only) |
 | `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `bulk_delete_links`
+### `bulk_delete_links` 👤
 
 **Delete many links at once** — write, destructive
 
@@ -210,7 +226,7 @@ Deletes a set of bookmarks and all their preserved copies. Two-step: the first c
 | `link_ids` | integer[] | yes | Link ids, at most 200 |
 | `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `represerve_link`
+### `represerve_link` 👤
 
 **Preserve a link again** — write, destructive
 
@@ -221,7 +237,7 @@ Has Linkwarden archive the page again. This first DELETES the existing preserved
 | `link_id` | integer | yes | Numeric id of the link — the "id" field returned by search_links, not its title or URL |
 | `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `delete_link_preservations`
+### `delete_link_preservations` 👤
 
 **Delete the preserved copies of links** — write, destructive
 
@@ -245,9 +261,9 @@ Creates a collection. Pass parent_id to nest it under an existing collection. Ne
 | `parent_id` | integer | no | Nest the new collection under this one |
 | `color` | string | no | Accent colour as a hex value, e.g. #0ea5e9 |
 
-### `update_collection`
+### `update_collection` 👤
 
-**Update a collection** — write
+**Update a collection** — write, destructive
 
 Changes a collection. Fields that are not given stay as they are: the tool reads the collection first and merges, because the underlying route rebuilds the member list from the request body and would otherwise remove every collaborator. Only the owner of a collection may update it. To move a collection to the top level pass parent_id=0 — Linkwarden needs an explicit marker for that and ignores null. Setting is_public=true needs a confirmation token: it makes the collection and every link in it readable by anyone who has the URL, without logging in.
 
@@ -261,7 +277,7 @@ Changes a collection. Fields that are not given stay as they are: the tool reads
 | `color` | string | no |  |
 | `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `delete_collection`
+### `delete_collection` 👤
 
 **Delete a collection** — write, destructive
 
@@ -288,18 +304,19 @@ Creates tags, or updates the ones that already exist — the underlying route is
 | `archive_as_wayback_machine` | boolean,null | no | Submit the URL to the Internet Archive for links carrying this tag. null inherits the account default. |
 | `ai_tag` | boolean,null | no | Let the configured AI model assign this tag for links carrying this tag. null inherits the account default. |
 
-### `rename_tag`
+### `rename_tag` 👤
 
-**Rename a tag** — write
+**Rename a tag** — write, destructive
 
-Renames a tag; every link carrying it keeps it. Tag names are unique per account, so renaming a tag to a name that already exists fails — use merge_tags to fold two tags into one instead.
+Renames a tag; every link carrying it keeps it. Tag names are unique per account, so renaming a tag to a name that already exists fails — use merge_tags to fold two tags into one instead. Asks a person first; where the client cannot show a dialog, call once to receive a token and again with it.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `tag_id` | integer | yes | Numeric id of the tag — the "id" field returned by list_tags |
 | `name` | string | yes | New tag name |
+| `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `delete_tags`
+### `delete_tags` 👤
 
 **Delete tags** — write, destructive
 
@@ -310,7 +327,7 @@ Deletes one or more tags. The links keep existing, they just lose the tag. Two-s
 | `tag_ids` | integer[] | yes | Tag ids, at most 50 |
 | `confirm_token` | string | no | Confirmation token from a previous call of this tool with the same arguments. Omit on the first call. |
 
-### `merge_tags`
+### `merge_tags` 👤
 
 **Merge tags into one** — write, destructive
 
@@ -326,7 +343,7 @@ Folds several tags into a single new one: every link that carried any of the sou
 
 **Subscribe to an RSS feed** — write
 
-Subscribes to an RSS or Atom feed. Linkwarden polls it and files every new entry as a link in the given collection, preserving the pages according to the account defaults. Linkwarden fetches the feed once immediately, so an unreachable feed fails right away. Because that fetch happens on the Linkwarden server, a URL addressing its own loopback or the link-local range is refused here before the request is made. That check covers the feed URL only — Linkwarden creates and preserves a link for every entry the feed contains, and on versions before 2.14 it does not check those addresses at all. Do not subscribe to a feed you do not trust. Subscription names must be unique per account, and instances cap the number of subscriptions (20 by default).
+Subscribes to an RSS or Atom feed. Linkwarden polls it and files every new entry as a link in the given collection, preserving the pages according to the account defaults. Linkwarden fetches the feed once immediately, so an unreachable feed fails right away. Because that fetch happens on the Linkwarden server, a URL addressing its own loopback or the link-local range is refused here before the request is made. That check covers the feed URL only — Linkwarden creates and preserves a link for every entry the feed contains, and on versions before 2.14 it does not check those addresses at all. Do not subscribe to a feed you do not trust. Linkwarden 2.14 and later apply their own check as well, and it is stricter: the feed URL is resolved and any address on a private or loopback range is refused with "URL resolves to a blocked internal hostname". A feed on the same private network as the instance — a company intranet, another container — therefore cannot be subscribed at all, however legitimate. That refusal comes from Linkwarden, not from here, and no argument changes it. Subscription names must be unique per account, and instances cap the number of subscriptions (20 by default).
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -335,7 +352,7 @@ Subscribes to an RSS or Atom feed. Linkwarden polls it and files every new entry
 | `collection_id` | integer | no | Collection the entries land in. Mutually exclusive with collection_name. |
 | `collection_name` | string | no | Collection by name; it is created if it does not exist. Mutually exclusive with collection_id. |
 
-### `delete_rss_subscription`
+### `delete_rss_subscription` 👤
 
 **Delete an RSS subscription** — write, destructive
 

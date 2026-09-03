@@ -1,20 +1,14 @@
 import { createHash } from 'node:crypto';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { LinkwardenApi } from '../api.js';
-import {
-  confirmationPrompt,
-  setResourceKey,
-  type ConfirmationStore,
-} from '../confirm.js';
+import { link } from '../output-schema.js';
+import { setResourceKey } from 'mcp-approval';
+import type { Approver, ConfirmationStore } from 'mcp-approval';
 import {
   assertNotErrorMessage,
   errorResult,
   jsonResult,
   run,
-  textResult,
 } from '../result.js';
 import {
   assertFetchableUrl,
@@ -24,6 +18,8 @@ import {
   idPath,
   linkId,
 } from '../schema.js';
+
+import type { LinkwardenApi } from '../api.js';
 import { shapeLink, type RawLink } from '../shape.js';
 
 /** Upper bound on how many links one bulk call may touch. */
@@ -54,6 +50,25 @@ interface LinkUpdateBody {
   collection: { id: number; ownerId: number };
   tags: { name: string }[];
   pinnedBy?: { id?: number }[];
+}
+
+/**
+ * The `details` line naming the host a stored URL points at, or none.
+ *
+ * A stored URL is not necessarily one this server ever validated — it can have
+ * arrived through the web UI, an import or an RSS subscription — so it is
+ * parsed defensively and simply omitted when it does not parse. A missing line
+ * is better than a line that says `null`.
+ */
+function hostOf(
+  url: string | null | undefined
+): { label: string; value: string }[] {
+  if (typeof url !== 'string') return [];
+  try {
+    return [{ label: 'Host', value: new URL(url).host }];
+  } catch {
+    return [];
+  }
 }
 
 async function fetchLink(api: LinkwardenApi, id: number): Promise<RawLink> {
@@ -107,7 +122,8 @@ function fingerprint(value: unknown): string {
 export function registerLinkWriteTools(
   server: McpServer,
   api: LinkwardenApi,
-  confirmations: ConfirmationStore
+  confirmations: ConfirmationStore,
+  approval: Approver
 ): void {
   server.registerTool(
     'create_link',
@@ -125,7 +141,7 @@ export function registerLinkWriteTools(
         'LAN address is accepted by this server, but Linkwarden 2.14 and later ' +
         'refuse to preserve one themselves — the bookmark is created and stays ' +
         'without an archive, so get_link_content will have nothing to return.',
-      inputSchema: {
+      inputSchema: z.object({
         url: httpUrl.describe('URL to bookmark, including the scheme'),
         name: z
           .string()
@@ -148,8 +164,20 @@ export function registerLinkWriteTools(
             'Target collection by name; it is created if it does not exist. Mutually exclusive with collection_id.'
           ),
         tags: tagNames.optional(),
+      }),
+      annotations: {
+        // Additive. Open-world: Linkwarden fetches the URL the caller gives
+        // it, so the caller picks the address — the same boundary the SSRF
+        // guard watches.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
       },
-      annotations: {},
+      outputSchema: z
+        .object({ created: link })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async ({ url, name, description, collection_id, collection_name, tags }) =>
       run(async () => {
@@ -197,7 +225,7 @@ export function registerLinkWriteTools(
         'Changing the URL is destructive and needs a confirmation token: Linkwarden ' +
         'deletes every preserved copy of the old page (screenshot, PDF, readable ' +
         'text, single-file HTML) and starts over.',
-      inputSchema: {
+      inputSchema: z.object({
         link_id: linkId,
         name: z.string().trim().max(2048).optional().describe('New title'),
         url: httpUrl
@@ -213,18 +241,32 @@ export function registerLinkWriteTools(
             'Replacement tag list. Omit to keep the current tags, pass [] to remove all of them.'
           ),
         confirm_token: confirmToken,
+      }),
+      annotations: {
+        // Destructive because of the archive, not the bookmark: changing the
+        // URL discards every preserved copy and fetches the new page. A
+        // snapshot of a page that has since changed is not recoverable.
+        //
+        // Open-world because `url` is optional but real: when it is given, the
+        // caller picks an address and Linkwarden fetches it, which is exactly
+        // what `create_link` is called open-world for. An annotation is a
+        // property of the tool, not of one call — a host that sandboxes
+        // open-world tools has to see this one whether or not the current call
+        // carries a URL.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: true,
       },
-      annotations: { idempotentHint: true },
+      outputSchema: z
+        .object({ updated: link })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
-    async ({
-      link_id,
-      name,
-      url,
-      description,
-      collection_id,
-      tags,
-      confirm_token,
-    }) =>
+    async (
+      { link_id, name, url, description, collection_id, tags, confirm_token },
+      mcp
+    ) =>
       run(async () => {
         const link = await fetchLink(api, link_id);
         const body = baseUpdateBody(link);
@@ -250,41 +292,47 @@ export function registerLinkWriteTools(
             collection_id: collection_id ?? null,
             tags: tags ?? null,
           })}`;
-          if (!confirmations.consume(resource, confirm_token)) {
-            if (confirm_token !== undefined) {
-              return errorResult(
-                'The confirmation token is invalid, expired, or was issued for a ' +
-                  'different change. Call update_link without a token to get a new one.'
-              );
+          const existing = Object.entries({
+            screenshot: link.image,
+            pdf: link.pdf,
+            readable: link.readable,
+            monolith: link.monolith,
+          })
+            .filter(
+              ([, path]) =>
+                typeof path === 'string' &&
+                path !== '' &&
+                path !== 'unavailable'
+            )
+            .map(([format]) => format);
+          // Only server-side metadata in this text — no titles or URLs, which
+          // come from a saved page and are read here by a model.
+          const outcome = await approval.requestApproval(
+            server,
+            mcp,
+            confirmations,
+            {
+              what: `change the URL of link ${link_id} and delete its ${
+                existing.length > 0
+                  ? `${existing.length} preserved format(s) (${existing.join(', ')})`
+                  : 'preservation state'
+              }`,
+              consequence:
+                'The preserved copies are re-fetched from the new URL; the old ones are ' +
+                'gone.',
+              resourceKey: resource,
+              token: confirm_token,
+              toolName: 'update_link',
+              title: 'Change this link and drop its preserved copies?',
+              hint: 'Tick to go ahead, leave it to cancel.',
             }
-            const token = confirmations.issue(resource);
-            const existing = Object.entries({
-              screenshot: link.image,
-              pdf: link.pdf,
-              readable: link.readable,
-              monolith: link.monolith,
-            })
-              .filter(
-                ([, path]) =>
-                  typeof path === 'string' &&
-                  path !== '' &&
-                  path !== 'unavailable'
-              )
-              .map(([format]) => format);
-            // Only server-side metadata in this text — no titles or URLs, which
-            // come from a saved page and are read here by a model.
-            return textResult(
-              confirmationPrompt(
-                `change the URL of link ${link_id} and delete its ${
-                  existing.length > 0
-                    ? `${existing.length} preserved format(s) (${existing.join(', ')})`
-                    : 'preservation state'
-                }`,
-                token,
-                confirmations.ttlMinutes
-              )
-            );
+          );
+          if (outcome.decision === 'rejected')
+            return errorResult(outcome.reason);
+          if (outcome.decision === 'declined') {
+            return errorResult(`The user declined. update_link did nothing.`);
           }
+          if (outcome.decision === 'pending') return outcome.result;
         }
 
         if (name !== undefined) body.name = name;
@@ -311,11 +359,21 @@ export function registerLinkWriteTools(
         "Pins a link to the account's dashboard, or removes the pin. Pins are per " +
         'account, so this only affects the account the token belongs to. Pinned ' +
         'links can be listed with search_links and pinned_only=true.',
-      inputSchema: {
+      inputSchema: z.object({
         link_id: linkId,
         pinned: z.boolean().describe('true to pin, false to unpin'),
+      }),
+      annotations: {
+        // A marker, not content.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { idempotentHint: true },
+      outputSchema: z
+        .object({ link })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async ({ link_id, pinned }) =>
       run(async () => {
@@ -352,38 +410,50 @@ export function registerLinkWriteTools(
         'Deletes a bookmark and every preserved copy of the page. Two-step: the ' +
         'first call returns a confirmation token, the second call with that token ' +
         'performs the deletion.',
-      inputSchema: { link_id: linkId, confirm_token: confirmToken },
-      annotations: { destructiveHint: true },
+      inputSchema: z.object({ link_id: linkId, confirm_token: confirmToken }),
+      annotations: {
+        // Idempotent by the specification's wording. The preserved copies go
+        // with it.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      outputSchema: z.object({ deleted_link_id: z.number().int() }),
     },
-    async ({ link_id, confirm_token }) =>
+    async ({ link_id, confirm_token }, mcp) =>
       run(async () => {
         const resource = setResourceKey('delete_link', [String(link_id)]);
-        if (!confirmations.consume(resource, confirm_token)) {
-          if (confirm_token !== undefined) {
-            return errorResult(
-              'The confirmation token is invalid, expired, or was issued for a ' +
-                'different link. Call delete_link without a token to get a new one.'
-            );
+        // Fetching first also makes the tool fail early on an id the account
+        // cannot see, instead of after the confirmation round trip.
+        const link = await fetchLink(api, link_id);
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `permanently delete link ${link_id} from collection ${String(
+              link.collection?.id ?? link.collectionId
+            )}, including its preserved copies`,
+            consequence: 'Nothing about the link can be restored from here.',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'delete_link',
+            title: 'Delete this link?',
+            hint: 'Tick to go ahead, leave it to cancel.',
+            fallbackNote:
+              'The title and URL are withheld on purpose: they come from a saved page.',
           }
-          // Fetching first also makes the tool fail early on an id the account
-          // cannot see, instead of after the confirmation round trip.
-          const link = await fetchLink(api, link_id);
-          const token = confirmations.issue(resource);
-          return textResult(
-            confirmationPrompt(
-              `permanently delete link ${link_id} from collection ${String(
-                link.collection?.id ?? link.collectionId
-              )}, including its preserved copies`,
-              token,
-              confirmations.ttlMinutes
-            ) +
-              '\nThe title and URL are withheld on purpose: they come from a saved page.'
-          );
+        );
+        if (outcome.decision === 'rejected') return errorResult(outcome.reason);
+        if (outcome.decision === 'declined') {
+          return errorResult(`The user declined. delete_link did nothing.`);
         }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const deleted = await api.delete(idPath('/links', link_id));
         assertNotErrorMessage(deleted, 'Deleting the link');
-        return textResult(`Link ${link_id} deleted.`);
+        return jsonResult({ deleted_link_id: link_id });
       })
   );
 
@@ -400,7 +470,7 @@ export function registerLinkWriteTools(
         'an empty tag list strips all tags from all of them. With replace_tags=false ' +
         'the tags are added to the existing ones. Either way this needs a ' +
         'confirmation token, because it rewrites many records at once.',
-      inputSchema: {
+      inputSchema: z.object({
         link_ids: z
           .array(linkId)
           .min(1)
@@ -418,10 +488,28 @@ export function registerLinkWriteTools(
           .optional()
           .describe('Move every link to this collection (owner only)'),
         confirm_token: confirmToken,
+      }),
+      annotations: {
+        // Replaces tags across many links at once, and `replace_tags` can
+        // strip every tag from all of them. The previous tags are not
+        // recoverable from here.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { destructiveHint: true },
+      outputSchema: z
+        .object({
+          updated_count: z.number().int(),
+          updated_link_ids: z.array(z.number().int()),
+        })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
-    async ({ link_ids, tags, replace_tags, collection_id, confirm_token }) =>
+    async (
+      { link_ids, tags, replace_tags, collection_id, confirm_token },
+      mcp
+    ) =>
       run(async () => {
         const ids = [...new Set(link_ids)];
         // The token covers the id set AND the change, so a confirmation for
@@ -435,29 +523,35 @@ export function registerLinkWriteTools(
           ids.map(String)
         );
 
-        if (!confirmations.consume(resource, confirm_token)) {
-          if (confirm_token !== undefined) {
-            return errorResult(
-              'The confirmation token is invalid, expired, or was issued for a ' +
-                'different set of links or a different change. Call ' +
-                'bulk_update_links without a token to get a new one.'
-            );
-          }
-          const token = confirmations.issue(resource);
-          return textResult(
-            confirmationPrompt(
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what:
               `${replace_tags ? 'replace the tags of' : 'add tags to'} ${ids.length} link(s)` +
-                (collection_id !== undefined
-                  ? ` and move them to collection ${collection_id}`
-                  : '') +
-                (replace_tags && tags.length === 0
-                  ? ', which removes every tag from all of them'
-                  : ''),
-              token,
-              confirmations.ttlMinutes
-            )
+              (collection_id !== undefined
+                ? ` and move them to collection ${collection_id}`
+                : '') +
+              (replace_tags && tags.length === 0
+                ? ', which removes every tag from all of them'
+                : ''),
+            consequence:
+              'The previous tags of those links are not recoverable from here.',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'bulk_update_links',
+            title: 'Apply this change to every one of them?',
+            hint: 'Tick to go ahead, leave it to cancel.',
+          }
+        );
+        if (outcome.decision === 'rejected') return errorResult(outcome.reason);
+        if (outcome.decision === 'declined') {
+          return errorResult(
+            `The user declined. bulk_update_links did nothing.`
           );
         }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const result = await api.put('/links', {
           links: ids.map((id) => ({ id })),
@@ -490,42 +584,61 @@ export function registerLinkWriteTools(
         'Deletes a set of bookmarks and all their preserved copies. Two-step: the ' +
         'first call returns a confirmation token that is bound to exactly this set ' +
         'of ids — adding an id afterwards invalidates it.',
-      inputSchema: {
+      inputSchema: z.object({
         link_ids: z
           .array(linkId)
           .min(1)
           .max(MAX_BULK_LINKS)
           .describe(`Link ids, at most ${MAX_BULK_LINKS}`),
         confirm_token: confirmToken,
+      }),
+      annotations: {
+        // Idempotent by the specification's wording.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { destructiveHint: true },
+      outputSchema: z.object({
+        deleted_count: z.number().int(),
+        deleted_link_ids: z.array(z.number().int()),
+      }),
     },
-    async ({ link_ids, confirm_token }) =>
+    async ({ link_ids, confirm_token }, mcp) =>
       run(async () => {
         const ids = [...new Set(link_ids)];
         const resource = setResourceKey('bulk_delete_links', ids.map(String));
 
-        if (!confirmations.consume(resource, confirm_token)) {
-          if (confirm_token !== undefined) {
-            return errorResult(
-              'The confirmation token is invalid, expired, or was issued for a ' +
-                'different set of links. Call bulk_delete_links without a token to ' +
-                'get a new one.'
-            );
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `permanently delete ${ids.length} link(s) (ids ${ids.join(', ')}) including their preserved copies`,
+            consequence:
+              'Neither the bookmarks nor their preserved copies can be restored from here.',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'bulk_delete_links',
+            hint: 'Tick to go ahead, leave it to cancel.',
           }
-          const token = confirmations.issue(resource);
-          return textResult(
-            confirmationPrompt(
-              `permanently delete ${ids.length} link(s) (ids ${ids.join(', ')}) including their preserved copies`,
-              token,
-              confirmations.ttlMinutes
-            )
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
+        }
+        if (outcome.decision === 'declined') {
+          return errorResult(
+            `The user declined. bulk_delete_links did nothing.`
           );
         }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const result = await api.delete('/links', { linkIds: ids });
         assertNotErrorMessage(result, 'Deleting the links');
-        return textResult(`Deleted ${ids.length} link(s): ${ids.join(', ')}.`);
+        return jsonResult({ deleted_count: ids.length, deleted_link_ids: ids });
       })
   );
 
@@ -539,35 +652,73 @@ export function registerLinkWriteTools(
         'or now blocks the archiver, the old copies are lost and nothing replaces ' +
         'them. That is why it needs a confirmation token.\n\n' +
         'The work happens in a background worker; get_worker_stats shows the queue.',
-      inputSchema: { link_id: linkId, confirm_token: confirmToken },
-      annotations: { destructiveHint: true },
+      inputSchema: z.object({ link_id: linkId, confirm_token: confirmToken }),
+      annotations: {
+        // Discards the existing copies before fetching the page again, and
+        // the new archive may differ from what was stored. Not idempotent:
+        // each run makes a fresh snapshot of a page that keeps changing.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+      outputSchema: z.object({
+        link_id: z.number().int(),
+        queued: z.literal(true),
+        note: z.string(),
+      }),
     },
-    async ({ link_id, confirm_token }) =>
+    async ({ link_id, confirm_token }, mcp) =>
       run(async () => {
         const resource = setResourceKey('represerve_link', [String(link_id)]);
-        if (!confirmations.consume(resource, confirm_token)) {
-          if (confirm_token !== undefined) {
-            return errorResult(
-              'The confirmation token is invalid, expired, or was issued for a ' +
-                'different link. Call represerve_link without a token to get a new one.'
-            );
+        // Fetching first also fails early on an id the account cannot see,
+        // instead of after the confirmation round trip.
+        const link = await fetchLink(api, link_id);
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `delete the preserved copies of link ${link_id} and archive the page again`,
+            consequence:
+              'The existing copies are discarded before the page is fetched again, and the new archive may differ from what was stored. Linkwarden fetches the address below from wherever this server runs.',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'represerve_link',
+            hint: 'Tick to go ahead, leave it to cancel.',
+            // The host, and nothing else. A link's URL can point anywhere on
+            // the network this server sits in — it may have arrived through
+            // the web UI, an import or a subscribed feed, none of which this
+            // server saw — and re-archiving is a fresh outbound request to it.
+            // Without the host there is no way to tell this "yes" apart from a
+            // harmless re-archive of a public page.
+            //
+            // `delete_link` withholds title and URL on purpose, and that stays
+            // true here: the host is not page prose, carries no instruction,
+            // and is the one part of the address the answer turns on. It is
+            // also the value the SSRF guard reasons about.
+            details: hostOf(link.url),
           }
-          const token = confirmations.issue(resource);
-          return textResult(
-            confirmationPrompt(
-              `delete the preserved copies of link ${link_id} and archive the page again`,
-              token,
-              confirmations.ttlMinutes
-            )
-          );
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
         }
+        if (outcome.decision === 'declined') {
+          return errorResult(`The user declined. represerve_link did nothing.`);
+        }
+        if (outcome.decision === 'pending') return outcome.result;
 
         // This route answers 200 with "Invalid URL." when the link has none.
         const result = await api.put(idPath('/links', link_id, '/archive'));
         assertNotErrorMessage(result, 'Re-preserving the link');
-        return textResult(
-          `Link ${link_id} was queued for preservation. Check get_worker_stats for progress.`
-        );
+        return jsonResult({
+          link_id,
+          queued: true,
+          note: 'Check get_worker_stats for progress.',
+        });
       })
   );
 
@@ -580,17 +731,28 @@ export function registerLinkWriteTools(
         'a set of links while keeping the bookmarks themselves. Useful to reclaim ' +
         'disk space. Unlike represerve_link this does NOT re-archive anything — use ' +
         'that tool if the copies should be recreated.',
-      inputSchema: {
+      inputSchema: z.object({
         link_ids: z
           .array(linkId)
           .min(1)
           .max(MAX_BULK_LINKS)
           .describe(`Link ids, at most ${MAX_BULK_LINKS}`),
         confirm_token: confirmToken,
+      }),
+      annotations: {
+        // The bookmarks stay; what they preserved does not.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { destructiveHint: true },
+      outputSchema: z.object({
+        deleted_count: z.number().int(),
+        link_ids: z.array(z.number().int()),
+        note: z.string(),
+      }),
     },
-    async ({ link_ids, confirm_token }) =>
+    async ({ link_ids, confirm_token }, mcp) =>
       run(async () => {
         const ids = [...new Set(link_ids)];
         const resource = setResourceKey(
@@ -598,29 +760,40 @@ export function registerLinkWriteTools(
           ids.map(String)
         );
 
-        if (!confirmations.consume(resource, confirm_token)) {
-          if (confirm_token !== undefined) {
-            return errorResult(
-              'The confirmation token is invalid, expired, or was issued for a ' +
-                'different set of links. Call delete_link_preservations without a ' +
-                'token to get a new one.'
-            );
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `permanently delete every preserved copy of ${ids.length} link(s) (ids ${ids.join(', ')}), keeping the bookmarks`,
+            consequence:
+              'The archived copies are gone; the bookmarks stay, but what they preserved cannot be recovered from here.',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'delete_link_preservations',
+            hint: 'Tick to go ahead, leave it to cancel.',
           }
-          const token = confirmations.issue(resource);
-          return textResult(
-            confirmationPrompt(
-              `permanently delete every preserved copy of ${ids.length} link(s) (ids ${ids.join(', ')}), keeping the bookmarks`,
-              token,
-              confirmations.ttlMinutes
-            )
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
+        }
+        if (outcome.decision === 'declined') {
+          return errorResult(
+            `The user declined. delete_link_preservations did nothing.`
           );
         }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const result = await api.delete('/links/archive', { linkIds: ids });
         assertNotErrorMessage(result, 'Deleting the preserved copies');
-        return textResult(
-          `Deleted the preserved copies of ${ids.length} link(s): ${ids.join(', ')}.`
-        );
+        return jsonResult({
+          deleted_count: ids.length,
+          link_ids: ids,
+          note: 'The links themselves remain; only their preserved copies are gone.',
+        });
       })
   );
 }

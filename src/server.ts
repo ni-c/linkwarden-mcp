@@ -1,11 +1,12 @@
 import { createRequire } from 'node:module';
+import { McpServer } from '@modelcontextprotocol/server';
+import { buildToolFilter, installToolFilter } from 'mcp-tool-allowlist';
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ALL_TOOLS, ESSENTIAL_TOOLS, READ_TOOLS } from './tools/catalogue.js';
 
 import { LinkwardenApi } from './api.js';
 import type { Config } from './config.js';
-import { ConfirmationStore } from './confirm.js';
-import { buildToolFilter, installToolFilter } from './tool-filter.js';
+import { ConfirmationStore, createApproval } from 'mcp-approval';
 import { registerCollectionReadTools } from './tools/collections.js';
 import { registerCollectionWriteTools } from './tools/collections-write.js';
 import { registerLinkReadTools } from './tools/links.js';
@@ -28,7 +29,25 @@ function packageVersion(): string {
 export function createServer(config: Config): McpServer {
   // Before anything is built: an unusable tool list should fail on the way in,
   // not leave a server running with tools quietly missing.
-  const filter = buildToolFilter(config);
+  const filter = buildToolFilter({
+    allowTools: config.allowTools,
+    denyTools: config.denyTools,
+    catalogue: {
+      all: ALL_TOOLS,
+      essential: ESSENTIAL_TOOLS,
+      ungated: READ_TOOLS,
+    },
+    names: {
+      allow: 'LINKWARDEN_ALLOW_TOOLS',
+      deny: 'LINKWARDEN_DENY_TOOLS',
+      server: 'linkwarden-mcp',
+    },
+    gate: {
+      closed: config.readOnly,
+      variable: 'LINKWARDEN_READ_ONLY',
+      noun: 'read-only mode',
+    },
+  });
 
   const api = new LinkwardenApi(config);
 
@@ -51,10 +70,16 @@ export function createServer(config: Config): McpServer {
     // One store for the whole server, so a token issued by one tool can never be
     // consumed by another: the resource key carries the operation name.
     const confirmations = new ConfirmationStore();
-    registerLinkWriteTools(server, api, confirmations);
-    registerCollectionWriteTools(server, api, confirmations);
-    registerTagWriteTools(server, api, confirmations);
-    registerRssWriteTools(server, api, confirmations);
+    // One approver per server: it holds the key that seals the request state
+    // carried out through the client and back.
+    const approval = createApproval({
+      server: 'linkwarden-mcp',
+      elicitation: config.elicitation,
+    });
+    registerLinkWriteTools(server, api, confirmations, approval);
+    registerCollectionWriteTools(server, api, confirmations, approval);
+    registerTagWriteTools(server, api, confirmations, approval);
+    registerRssWriteTools(server, api, confirmations, approval);
   }
 
   return server;

@@ -11,23 +11,52 @@ npm test          # unit tests against a stubbed Linkwarden API — no instance 
 npm run build
 ```
 
-A minimal dev environment:
+## Running the integration suite
+
+The unit tests stub the API. The integration suite spawns the built server over
+stdio against a throwaway Linkwarden in Docker and calls **every tool in the
+catalogue**.
 
 ```sh
-# Throwaway Linkwarden, so nothing you try reaches a real bookmark collection.
-docker run -d --name lw-dev -p 127.0.0.1:3199:3000 \
-  -e DATABASE_URL=postgresql://postgres:dev@postgres:5432/linkwarden \
-  -e NEXTAUTH_SECRET=dev -e NEXTAUTH_URL=http://127.0.0.1:3199/api/v1/auth \
-  ghcr.io/linkwarden/linkwarden:latest
-# Register an account at http://127.0.0.1:3199, then create a token under
-# Settings -> Access Tokens.
-
-LINKWARDEN_URL=http://127.0.0.1:3199 LINKWARDEN_TOKEN=… node dist/index.js
+npm run build     # the suite runs dist/index.js, not src/
+docker compose -f test/integration/compose.yml up -d
+npm run test:integration
+docker compose -f test/integration/compose.yml down -v
 ```
 
-Note that a Linkwarden without Meilisearch does not parse `search_links` field filters
-(`tag:`, `collection:`, …) — it matches the whole query as one literal substring. That
-is a property of Linkwarden, not a bug here, and `search_links` says so in its result.
+The stack is deliberately complete — Postgres **and** Meilisearch — because a
+Linkwarden without Meilisearch does not parse `search_links` field filters
+(`tag:`, `collection:`, …) at all: it matches the whole query as one literal
+substring, so a filtered search returns nothing with no error anywhere. Testing
+against half a stack would prove the wrong thing.
+
+The page and the feed the suite bookmarks are served by a container on the
+compose network, so nothing here reaches the public internet.
+
+Five things it knows that cost a session each:
+
+- **`GET /api/v1/worker` only exists from Linkwarden 2.14.** Before that it is a
+  404 whose HTML body the server correctly refuses to quote, so the result
+  reads like a wrong id rather than a missing endpoint. Pinned at 2.16.2.
+- **Signing in is a NextAuth credentials callback**, not a JSON endpoint. It
+  answers 200 either way; only the cookie tells them apart. The token endpoint
+  is 401 without it.
+- **`Set-Cookie` carries only what changed**, and NextAuth sets the CSRF cookie
+  and the session cookie on different responses — so replacing the whole cookie
+  string with each response drops the session.
+- **Search is eventually consistent.** Linkwarden indexes into Meilisearch from
+  its worker, so a search issued straight after a write is answered from an
+  index that does not contain it yet. An empty result is not an error, so this
+  reads as "the search is broken" rather than "wait a moment".
+- **Linkwarden 2.14 and later refuse an RSS feed on a private address** — "URL
+  resolves to a blocked internal hostname". The fixture feed served beside it on
+  the compose network is exactly what it will not accept, which is why
+  `delete_rss_subscription` is the one tool the suite excuses. Both refusals are
+  asserted: Linkwarden's and this server's own SSRF guard.
+
+**26 of 28 tools run against a real instance.** The two excused ones carry
+written reasons in the suite; `get_link_content` needs a finished preservation,
+which means a headless browser has driven over the page.
 
 ## Expectations
 
@@ -47,7 +76,7 @@ is a property of Linkwarden, not a bug here, and `search_links` says so in its r
   do not return Linkwarden's rows verbatim.
 - **No new runtime dependencies** without a very good reason; the small tree is a
   feature.
-- Run `npm run lint` before pushing — it checks both eslint and prettier, and prettier
+- Run `npm run lint` before pushing — it checks both oxlint and prettier, and prettier
   also validates the YAML, JSON and Markdown files.
 
 ## Questions and bugs

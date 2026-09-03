@@ -13,15 +13,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  confirmTokenFrom,
-  connectClient,
+  tokenOf,
+  connect,
   envelopeResponse,
   linkFixture,
   requestBody,
   resultText,
   stubFetch,
   stubFetchRejecting,
-} from './helpers.js';
+} from './harness.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -48,7 +48,7 @@ const INTERNAL = [
 describe('create_link', () => {
   it.each(INTERNAL)('refuses %s without touching the API', async (url) => {
     stubFetchRejecting();
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'create_link',
       arguments: { url },
@@ -61,7 +61,7 @@ describe('create_link', () => {
     'refuses the scheme of %s',
     async (url) => {
       stubFetchRejecting();
-      const client = await connectClient();
+      const client = await connect();
       const result = await client.callTool({
         name: 'create_link',
         arguments: { url },
@@ -72,7 +72,7 @@ describe('create_link', () => {
 
   it('still bookmarks a private LAN address, which self-hosted setups use', async () => {
     const calls = stubFetch(() => envelopeResponse(linkFixture()));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'create_link',
       arguments: { url: 'http://192.168.1.50/router' },
@@ -89,7 +89,7 @@ describe('create_link', () => {
     // fetcher that splits at the @. Forwarding the input verbatim would mean
     // checking one host and having Linkwarden fetch the other.
     const calls = stubFetch(() => envelopeResponse(linkFixture()));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'create_link',
       arguments: { url: 'http://ok.example.com\\@127.0.0.1/feed' },
@@ -104,7 +104,7 @@ describe('create_link', () => {
 describe('create_rss_subscription', () => {
   it.each(INTERNAL)('refuses %s without touching the API', async (url) => {
     stubFetchRejecting();
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'create_rss_subscription',
       arguments: { name: 'feed', url },
@@ -117,7 +117,7 @@ describe('create_rss_subscription', () => {
 
   it('still subscribes to a routable feed', async () => {
     const calls = stubFetch(() => envelopeResponse({ id: 1, name: 'feed' }));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'create_rss_subscription',
       arguments: { name: 'feed', url: 'https://example.com/rss' },
@@ -135,7 +135,7 @@ describe('update_link', () => {
     const calls = stubFetch(() =>
       envelopeResponse(linkFixture({ url: 'https://example.net/old' }))
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'update_link',
       arguments: { link_id: 42, url: 'http://169.254.169.254/latest/' },
@@ -151,7 +151,7 @@ describe('update_link', () => {
     const calls = stubFetch(() =>
       envelopeResponse(linkFixture({ url: 'https://example.net/old' }))
     );
-    const client = await connectClient();
+    const client = await connect();
     const first = await client.callTool({
       name: 'update_link',
       arguments: { link_id: 42, url: 'https://example.net/new' },
@@ -161,7 +161,7 @@ describe('update_link', () => {
       arguments: {
         link_id: 42,
         url: 'https://example.net/new',
-        confirm_token: confirmTokenFrom(first),
+        confirm_token: tokenOf(first),
       },
     });
 
@@ -187,7 +187,7 @@ describe('update_link', () => {
       const calls = stubFetch(() =>
         envelopeResponse(linkFixture({ url: stored }))
       );
-      const client = await connectClient();
+      const client = await connect();
       const result = await client.callTool({
         name: 'update_link',
         arguments: { link_id: 42, url: sent, name: 'Renamed' },

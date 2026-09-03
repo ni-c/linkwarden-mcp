@@ -10,6 +10,7 @@ All configuration is by environment variable; there is no config file.
 | `LINKWARDEN_ALLOW_TOOLS`  | no       | string  | —       | Tool names, `list_*` prefixes or `essential`; only these register. |
 | `LINKWARDEN_DENY_TOOLS`   | no       | string  | —       | Same syntax; subtracted from whatever the allow list left.         |
 | `LINKWARDEN_INSECURE_TLS` | no       | boolean | `false` | `true` accepts self-signed certificates, scoped to this connection. |
+| `ELICITATION`             | no       | boolean | `true`  | `false` replaces the approval dialog with the two-call token. **Not prefixed.** |
 
 Booleans are compared against the literal string `true`. `True`, `1` and `yes` are off,
 so a typo fails closed rather than silently disabling certificate validation.
@@ -83,3 +84,23 @@ There are no variables for timeouts, page sizes or result budgets; those are fix
 | Links per bulk operation | 200         |
 | Article slice, default   | 20 000 characters |
 | Confirmation token TTL   | 5 minutes   |
+
+## `ELICITATION`
+
+Whether a client that *can* show a dialog is asked before a guarded tool acts.
+`false` takes the two-call-token path instead — it does not remove the guard, and a
+server started with it off prints one line saying so.
+
+Two ways it differs from every other variable here:
+
+- **No prefix.** One `export ELICITATION=false` reaches every MCP server in the same
+  environment, not just this one. That is the point of it and also its risk; see
+  [Asking a person](/guide/approval).
+- **Fatal on anything else.** Where the `LINKWARDEN_*` booleans fail *off* on a typo,
+  this one stops the server with exit code 1. It is the only variable here that
+  defaults to *on*, and a typo that fell back would leave the dialog running while
+  you believed it was off.
+
+Values are trimmed and matched case-insensitively. It is read *after*
+`LINKWARDEN_TOKEN` is deleted from `process.env`, so the fatal path cannot leave the
+token sitting there for a crash reporter.

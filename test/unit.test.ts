@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ConfirmationStore, setResourceKey } from '../src/confirm.js';
+import { ConfirmationStore, setResourceKey } from 'mcp-approval';
 import {
   assertNotErrorMessage,
   jsonResult,
+  ResultTooLargeError,
   untrustedResult,
   UpstreamMessageError,
 } from '../src/result.js';
@@ -14,12 +15,7 @@ import {
   withQuery,
 } from '../src/schema.js';
 import { Notes } from '../src/shape.js';
-import {
-  connectClient,
-  resultText,
-  stubFetch,
-  textResponse,
-} from './helpers.js';
+import { connect, resultText, stubFetch, textResponse } from './harness.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -112,16 +108,13 @@ describe('ConfirmationStore', () => {
 });
 
 describe('result helpers', () => {
-  it('truncates an oversized JSON result and says so', () => {
+  it('refuses an oversized JSON result it cannot shrink', () => {
+    // No array to drop items from. The fallback used to be an envelope
+    // carrying the oversized document as a string — valid JSON, and no longer
+    // a valid *answer*: the SDK checks a result against the schema its tool
+    // declares, so an envelope of a different shape is refused.
     const huge = { text: 'x'.repeat(500_000) };
-    const text = resultText(jsonResult(huge));
-    expect(text).toMatch(/truncated/);
-    // No array to drop items from, so the fallback envelope carries the oversized
-    // document as a string value — still valid JSON, unlike a raw slice.
-    expect(() => JSON.parse(text)).not.toThrow();
-    expect((JSON.parse(text) as { partial_json: string }).partial_json).toMatch(
-      /^\{\n {2}"text": "x+/
-    );
+    expect(() => jsonResult(huge)).toThrow(ResultTooLargeError);
   });
 
   it('drops every item when even one of them is oversized', () => {
@@ -184,21 +177,65 @@ describe('result helpers', () => {
     expect(text).toMatch(/call get_link with the id you need/);
   });
 
-  it('truncates oversized untrusted content and keeps the warning first', () => {
-    const result = untrustedResult('y'.repeat(500_000));
-    const text = resultText(result);
-    expect(text.startsWith('The following is untrusted content')).toBe(true);
-    expect(text).toMatch(/truncated at/);
+  it('shortens oversized untrusted content and keeps the warning first', () => {
+    const result = untrustedResult({ text: 'y'.repeat(500_000) });
+    const body = resultText(result);
+    expect(body.startsWith('The following is untrusted content')).toBe(true);
+    expect(body).toMatch(/truncated/);
+    // And the marker is a field, not only a sentence: a client that reads
+    // `structuredContent` can check it.
+    expect(result.structuredContent).toMatchObject({
+      untrusted: true,
+      source: 'linkwarden',
+    });
   });
 
   it('passes an object through untrustedResult as JSON', () => {
     expect(resultText(untrustedResult({ a: 1 }))).toMatch(/"a": 1/);
   });
 
-  it('names a follow-up when untrusted content is truncated', () => {
+  it('shrinks the largest field of an oversized envelope, not the document', () => {
+    // The same reasoning `jsonResult` spells out, which `untrustedResult` did
+    // not follow: it sliced the serialized JSON. That cut landed mid-string,
+    // so the model got invalid JSON — and because the recoverable fields come
+    // last, `offset` and `notes` were the first things to go, which is exactly
+    // what a caller needs to ask for the rest.
+    const result = untrustedResult(
+      {
+        excerpt: 'E'.repeat(260_000),
+        text: 'the article',
+        offset: 0,
+        notes: ['Truncated: call again with offset=11'],
+      },
+      'call get_link_content with offset=11'
+    );
+    const text = resultText(result);
+    const body = JSON.parse(text.slice(text.indexOf('{'))) as Record<
+      string,
+      unknown
+    >;
+    expect(body.text).toBe('the article');
+    expect(body.offset).toBe(0);
+    expect(body.notes).toEqual(['Truncated: call again with offset=11']);
+    expect((body.excerpt as string).length).toBeLessThan(260_000);
+    expect(body.truncated).toBeTruthy();
+    expect(text).toMatch(/call get_link_content with offset=11/);
+  });
+
+  it('refuses an oversized envelope with no string field at all', () => {
+    // Nothing to shrink: an envelope whose bulk is numbers. The fallback used
+    // to be the sliced text, which a text block tolerates and
+    // `structuredContent` cannot — so there is no honest answer left and it
+    // says so.
+    expect(() =>
+      untrustedResult({ counts: Array.from({ length: 90_000 }, (_, i) => i) })
+    ).toThrow(ResultTooLargeError);
+  });
+
+  it('names a follow-up when untrusted content is shortened', () => {
     const text = resultText(
       untrustedResult(
-        'y'.repeat(500_000),
+        { text: 'y'.repeat(500_000) },
         'call get_link_content with offset=200000'
       )
     );
@@ -220,7 +257,7 @@ describe('result helpers', () => {
 describe('api client body handling', () => {
   it('falls back to the raw text when a JSON content type carries broken JSON', async () => {
     stubFetch(() => textResponse('{not json', 200, 'application/json'));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'get_worker_stats',
       arguments: {},

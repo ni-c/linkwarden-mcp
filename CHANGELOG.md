@@ -10,6 +10,209 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- #region changelog -->
 
+## [Unreleased]
+
+### Added
+
+- Every tool declares an `outputSchema` and answers with `structuredContent`
+  beside the text block. A client no longer has to parse prose to use a result —
+  which seven of them made unavoidable, since they answered with a sentence. The
+  sentence stays, in the text block.
+
+  The ten reading tools carry `untrusted: true` and `source: "linkwarden"` as
+  fields. This server has always said so in `notes`, which is prose in a list: a
+  client can read it and cannot check it. The write tools are without the
+  marker — they report an id this server was given and a count it made.
+
+### Changed
+
+- The advertised schemas avoid spellings that are legal JSON Schema and still
+  get a tool refused, or its constraint silently dropped, by some MCP clients:
+  an open object now writes `"additionalProperties": true` rather than the
+  empty schema `{}` zod emits for it; a value that was left untyped is declared
+  as what it really is; and a nullable field is written as `anyOf` branches
+  rather than `"type": ["string", "null"]`, which several clients read as a
+  single type and then drop. What the tools accept and return is unchanged;
+  only the way the schema says so is.
+
+- Three refusals in `get_link_content` are error results rather than plain
+  ones: no readable archive, an archive served with the wrong content type, and
+  one that is not valid JSON. Each read like an answer while being the
+  opposite.
+
+- A result too large to shrink is an error rather than an envelope carrying the
+  oversized document as a string. That envelope is valid JSON and no longer a
+  valid _answer_: the SDK checks a result against the schema its tool declares.
+
+- The two-call `confirm_token` prompt is an error result. What was asked for did
+  not happen, which is what `isError` says. The text is unchanged and still
+  carries the token.
+
+- The integration compose file publishes Linkwarden on `LINKWARDEN_PORT`
+  (default 3010) instead of a hardcoded 3010, so a workstation that already
+  runs something there does not need a patched compose file. `smtp-mcp` has
+  done the same for its own port for a while.
+
+### Security
+
+- **`update_link` and `create_rss_subscription` are `openWorldHint: true`.**
+  Both hand Linkwarden an address the caller chose and have it fetch that page,
+  which is the one thing `create_link` was called open-world for. They said
+  `false` on the reading that their usual call fetches nothing — but that is a
+  property of a call and an annotation is a property of a tool, and the point of
+  the hint is that a host can gate or sandbox such a tool _before_ it sees the
+  arguments. `create_rss_subscription` is the broader of the two: Linkwarden
+  pulls the feed at once and then creates and archives a link for every entry.
+
+  The test that pinned this asserted `tool.name === 'create_link'`; it now
+  compares the open-world set against the set of tools whose schema declares a
+  `url`, so the two cannot drift apart again.
+
+- **The `represerve_link` dialog names the host.** A stored link can point at
+  `http://10.0.0.1/status` — it may have arrived through the web UI, an import
+  or a subscribed feed, none of which this server saw — and re-archiving is a
+  fresh outbound fetch of it. `get_link_content` actively steers a model there
+  ("call `represerve_link` to have Linkwarden archive the page again"), and the
+  question was "delete the preserved copies of link 42 and archive the page
+  again", with no way to tell that apart from re-archiving a public page.
+
+  Only the host, on the labelled "supplied by the caller" line. `delete_link`
+  withholds the title and the URL on purpose and still does: page prose does not
+  belong in front of a person. The host is the part the answer turns on.
+
+- **`rename_tag`'s confirmation key labels its targets.** `setResourceKey` sorts
+  its target list, and `String(tag_id)` erased the difference between an id and
+  a name — so `{tag_id: 7, name: "12"}` and `{tag_id: 12, name: "7"}` produced
+  the same fingerprint, one approval covering two different renames. Both pass
+  the schema: a tag called "12" is legal and year or issue-number tags are
+  ordinary. The targets are now `tag:<id>` and `name:<name>`.
+
+### Fixed
+
+- **An oversized field no longer cuts the result mid-string.** `untrustedResult`
+  capped by slicing the serialized JSON. Readability copies
+  `<meta name="description">` into `excerpt`, so a page the caller never chose
+  to trust could put 260 kB there — and none of the six metadata fields
+  `get_link_content` returns was clamped on that path. The answer was 200 kB of
+  attacker-chosen text, no article, no `notes` and no `offset`, in JSON that no
+  longer parsed: everything a model needed to recover came last and disappeared
+  first.
+
+  Two changes. The metadata now goes through the same `clamp` every other path
+  uses, so only `text` can fill the budget and `max_chars` already bounds that.
+  And `untrustedResult` shrinks the **largest field** of an envelope instead of
+  the document, which is what `jsonResult` beside it has always done and says
+  so in a comment.
+
+- **A corrupt readable archive is reported, not quoted.** `get_link_content`
+  checked the content type and then called `JSON.parse` unguarded. A body that
+  claims JSON and is not — something `api.request()` treats as a thing that
+  happens — threw, and `run()` answered with Node's parser message, which quotes
+  about ten characters of the body. Those characters come from a saved foreign
+  page and reached the model **outside** the untrusted wrapper the rest of the
+  handler routes everything through.
+
+- `LINKWARDEN_READ_ONLY` accepts `1`, `true` and `yes`, trimmed and
+  case-insensitively, where it used to require the exact string `true`. It fails
+  _towards_ the restriction, so `LINKWARDEN_READ_ONLY=1` silently registering
+  the write tools is the one outcome it must not have.
+  `LINKWARDEN_INSECURE_TLS` keeps the exact-match rule, for the same reason read
+  the other way round.
+
+- `docs/guide/security.md` listed three of the four things the SSRF guard does
+  not cover and left out `represerve_link`, although the 0.1.3 entry claims both
+  files name it. It is there now.
+
+### Added
+
+- Tools that need a confirmation now **ask the user**, on clients that can show
+  a prompt. The two-call `confirm_token` remains for clients that cannot, so
+  nothing that works today stops working — but where a person can be asked, one
+  is, instead of a token that only proves the same call was made twice.
+
+- **`rename_tag` now asks too.** It was annotated `destructiveHint: true` and went
+  through unannounced: one call, and every link that carries the tag follows.
+  Linkwarden keeps no history of what a tag used to be called, and a saved search
+  built on the old name simply stops matching. wikijs guards `update_tag` for the
+  same reason.
+
+  The approval is bound to the tag id **and the new name**, so one obtained for
+  "rename 3 to reading" does not execute "rename 3 to archive".
+
+- `ELICITATION` switches the dialog off — `false` sends a client that could have
+  been asked down the two-call-token path instead. For a scheduled job or a test
+  harness, where a dialog is the wrong shape rather than an unwanted one.
+
+  It does **not** remove the guard: there is no setting in which a guarded call
+  goes unannounced. Two deliberate rough edges come with it. The variable is
+  **not prefixed**, so one `export ELICITATION=false` reaches every MCP server in
+  the environment — which is why a server started with it off prints a line
+  saying so, and why the fallback text names the server instead of blaming a
+  client that was working fine. And a value that is neither `true` nor `false`
+  **stops the server**, where the `LINKWARDEN_*` booleans beside it fail _off_ on
+  a typo: this is the only variable here that defaults to _on_. It is read after
+  `LINKWARDEN_TOKEN` is wiped from the environment, so that exit cannot leave the
+  token behind.
+
+- A `docs/guide/approval.md` page, and a 👤 marker in the generated tool
+  reference that is read off the registered schema rather than from a list kept
+  beside it.
+
+### Changed
+
+- Runs on **MCP SDK 2.0**. Existing clients see the same protocol revision they
+  always did; the change is the package layout behind it, and it is what lets
+  the dialog above work on both protocol eras from one code path — including
+  behind a stateless gateway, where the older mechanism silently fell back to
+  the weaker token for every client.
+
+- The linter is **oxlint** instead of eslint plus typescript-eslint, which
+  lifts the TypeScript ceiling: typescript-eslint pins `typescript` below 6.1,
+  so this repository was held on TypeScript 6 by its linter rather than by its
+  code.
+
+- The tool filter, the confirmation store, the host classifier and the
+  documentation-asset generator now come from **`mcp-tool-allowlist`**,
+  **`mcp-approval`**, **`mcp-internal-hosts`** and **`svg-asset-set`** rather
+  than from copies kept here — 1122 fewer lines, and one place to fix each. None
+  of them has a runtime dependency of its own.
+
+- The shared libraries move to `mcp-approval` 0.7.1, `mcp-tool-allowlist` 0.2.1,
+  `mcp-internal-hosts` 0.2.1, `mcp-integration-harness` 0.2.0 and
+  `svg-asset-set` 0.2.0. The harness change shows up in the suite: where a
+  security path asserted only that a call failed, it now has to say **why** —
+  `expectError: true` is also satisfied by a schema rejection, so a renamed
+  argument used to keep such a test green while the guard it names went
+  unreached.
+
+- `SECURITY.md` now says what the confirmation **proves**: binding to one
+  operation with one set of arguments, not freshness. No replay defence is
+  built, because the sealing key is per process, the token is single-use, and
+  `requestState` only crosses the wire on protocol revision `2026-07-28`, which
+  this server does not offer — it takes the SDK's default list, which ends at
+  `2025-11-25`. The section names what would have to change for that to stop
+  being true.
+
+- stdio is served through `serveStdio`, so the connection's era is negotiated
+  on the opening exchange rather than assumed. A client that pins the
+  `2026-07-28` era is served it; until now its `server/discover` probe was
+  answered with "Method not found" and only `2025-11-25` was on offer. A client
+  that speaks the older era sees no change — it is still pinned to one instance
+  for the life of the connection, exactly as a hand-wired
+  `StdioServerTransport` served it.
+
+### Fixed
+
+- Confirmation tokens are compared with a **constant-time** comparison. The
+  copy in this repository used `!==`, which leaks through timing how much of a
+  guess was right. Reaching a token still requires having received it in a
+  previous tool result, so this closes a margin rather than a hole.
+
+- An entry in `LINKWARDEN_ALLOW_TOOLS` that is not tool-name-shaped is now
+  **redacted** in the error rather than quoted back. `LINKWARDEN_TOKEN` and
+  `LINKWARDEN_ALLOW_TOOLS` are adjacent lines in every compose file, and a
+  paste into the wrong one used to print the credential into the client's log.
+
 ## [0.2.0] - 2026-08-27
 
 ### Added

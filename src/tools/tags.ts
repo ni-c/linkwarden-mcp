@@ -1,8 +1,11 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { LinkwardenApi } from '../api.js';
-import { jsonResult, run } from '../result.js';
+import {
+  notes,
+  tag,
+  truncationNote,
+  untrustedFields,
+} from '../output-schema.js';
 import {
   cursor,
   idPath,
@@ -17,6 +20,10 @@ import {
   UNTRUSTED_METADATA_NOTE,
   type RawTag,
 } from '../shape.js';
+
+import type { LinkwardenApi } from '../api.js';
+import { READ_ONLY } from './annotations.js';
+import { run, untrustedResult } from '../result.js';
 
 /** Defensive cap; the instance itself pages at PAGINATION_TAKE_COUNT. */
 const MAX_TAGS = 200;
@@ -34,7 +41,7 @@ export function registerTagReadTools(
         'one is attached to. Tags cut across collections. The per-tag archival ' +
         'settings are included: null there means "inherit the account default", ' +
         'which is not the same as false.',
-      inputSchema: {
+      inputSchema: z.object({
         search: z
           .string()
           .max(50)
@@ -42,8 +49,15 @@ export function registerTagReadTools(
           .describe('Only return tags whose name contains this text'),
         sort: tagSort,
         cursor,
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        truncated: truncationNote,
+        count: z.number().int(),
+        tags: z.array(tag),
+        notes,
+      }),
     },
     async ({ search, sort, cursor: from }) =>
       run(async () => {
@@ -65,7 +79,7 @@ export function registerTagReadTools(
           );
         }
 
-        return jsonResult({
+        return untrustedResult({
           count: tags.length,
           next_cursor: nextCursor,
           tags: tags.map(shapeTag),
@@ -81,19 +95,24 @@ export function registerTagReadTools(
       description:
         'Fetches one tag with its archival settings. Use search_links with tag_id ' +
         'to get the links carrying it.',
-      inputSchema: { tag_id: tagId },
-      annotations: { readOnlyHint: true },
+      inputSchema: z.object({ tag_id: tagId }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        tag: tag.nullable(),
+        notes,
+      }),
     },
     async ({ tag_id }) =>
       run(async () => {
         const tag = (await api.get(idPath('/tags', tag_id))) as RawTag | null;
         if (tag === null) {
-          return jsonResult({
+          return untrustedResult({
             tag: null,
             notes: [`No tag with id ${tag_id} is visible to this account.`],
           });
         }
-        return jsonResult({
+        return untrustedResult({
           tag: shapeTag(tag),
           notes: [UNTRUSTED_METADATA_NOTE],
         });

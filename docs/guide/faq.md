@@ -80,6 +80,15 @@ That is why `delete_collection` requires a confirmation token and says so in the
 To keep the links, move them to another collection first — `bulk_update_links` can do
 that for a whole batch.
 
+## A dialog appeared before a delete
+
+That is the [approval flow](/guide/approval) working. Where your client supports MCP
+elicitation, anything that loses data raises a question the model cannot answer on its
+behalf. Where it cannot, the tool falls back to a two-call `confirm_token` — and if your
+client *can* show dialogs and you are still seeing tokens, check whether `ELICITATION`
+is set to `false` somewhere in the environment. It carries no `LINKWARDEN_` prefix, so
+it may have been meant for a different server.
+
 ## Why does `update_link` sometimes want a confirmation and sometimes not?
 
 Only when you change the **URL**. Linkwarden deletes every preserved copy of the old

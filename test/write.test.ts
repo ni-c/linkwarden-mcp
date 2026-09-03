@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   collectionFixture,
-  confirmTokenFrom,
-  connectClient,
+  tokenOf,
+  connect,
   envelopeResponse,
   linkFixture,
   requestBody,
@@ -13,7 +13,7 @@ import {
   stubFetchRejecting,
   tagFixture,
   userFixture,
-} from './helpers.js';
+} from './harness.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -22,7 +22,7 @@ afterEach(() => {
 describe('create_link', () => {
   it('sends the URL, tags and collection', async () => {
     const calls = stubFetch(() => envelopeResponse(linkFixture()));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'create_link',
       arguments: {
@@ -46,7 +46,7 @@ describe('create_link', () => {
 
   it('refuses both collection_id and collection_name without calling the API', async () => {
     const calls = stubFetchRejecting();
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'create_link',
       arguments: {
@@ -62,7 +62,7 @@ describe('create_link', () => {
 
   it('rejects a URL without a scheme', async () => {
     const calls = stubFetchRejecting();
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'create_link',
       arguments: { url: 'example.net/new' },
@@ -83,7 +83,7 @@ describe('create_link', () => {
     'ftp://files.example.net/x',
   ])('refuses to bookmark %s', async (url) => {
     const calls = stubFetchRejecting();
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'create_link',
       arguments: { url },
@@ -95,7 +95,7 @@ describe('create_link', () => {
 
   it('refuses a non-http scheme in update_link and create_rss_subscription too', async () => {
     const calls = stubFetchRejecting();
-    const client = await connectClient();
+    const client = await connect();
 
     const updated = await client.callTool({
       name: 'update_link',
@@ -123,7 +123,7 @@ describe('update_link merges instead of replacing', () => {
         ? envelopeResponse(linkFixture({ description: 'Changed' }))
         : envelopeResponse(linkFixture())
     );
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'update_link',
       arguments: { link_id: 42, description: 'Changed' },
@@ -149,7 +149,7 @@ describe('update_link merges instead of replacing', () => {
         ? envelopeResponse(linkFixture({ tags: [] }))
         : envelopeResponse(linkFixture())
     );
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'update_link',
       arguments: { link_id: 42, tags: [] },
@@ -163,7 +163,7 @@ describe('update_link merges instead of replacing', () => {
         ? envelopeResponse(linkFixture())
         : envelopeResponse(linkFixture())
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'update_link',
       arguments: { link_id: 42, url: 'https://example.net/article' },
@@ -175,7 +175,7 @@ describe('update_link merges instead of replacing', () => {
 
   it('requires a confirmation to change the URL and names the doomed formats', async () => {
     const calls = stubFetch(() => envelopeResponse(linkFixture()));
-    const client = await connectClient();
+    const client = await connect();
     const first = await client.callTool({
       name: 'update_link',
       arguments: { link_id: 42, url: 'https://example.net/moved' },
@@ -192,7 +192,7 @@ describe('update_link merges instead of replacing', () => {
     // as an unanchored regex made CodeQL read it as a hostname check.
     expect(text).not.toContain('example.net/moved');
 
-    const token = confirmTokenFrom(first);
+    const token = tokenOf(first);
     const second = await client.callTool({
       name: 'update_link',
       arguments: {
@@ -207,12 +207,12 @@ describe('update_link merges instead of replacing', () => {
 
   it('rejects a URL-change token that had other changes bolted on afterwards', async () => {
     stubFetch(() => envelopeResponse(linkFixture()));
-    const client = await connectClient();
+    const client = await connect();
     const first = await client.callTool({
       name: 'update_link',
       arguments: { link_id: 42, url: 'https://example.net/moved' },
     });
-    const token = confirmTokenFrom(first);
+    const token = tokenOf(first);
 
     const second = await client.callTool({
       name: 'update_link',
@@ -225,7 +225,7 @@ describe('update_link merges instead of replacing', () => {
       },
     });
     expect(second.isError).toBe(true);
-    expect(resultText(second)).toMatch(/different change/);
+    expect(resultText(second)).toMatch(/issued for different arguments/);
   });
 });
 
@@ -237,7 +237,7 @@ describe('set_link_pinned', () => {
         return envelopeResponse(linkFixture({ pinnedBy: [{ id: 1 }] }));
       return envelopeResponse(linkFixture());
     });
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'set_link_pinned',
       arguments: { link_id: 42, pinned: true },
@@ -253,7 +253,7 @@ describe('set_link_pinned', () => {
       if (init?.method === 'PUT') return envelopeResponse(linkFixture());
       return envelopeResponse(linkFixture());
     });
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'set_link_pinned',
       arguments: { link_id: 42, pinned: false },
@@ -263,10 +263,90 @@ describe('set_link_pinned', () => {
   });
 });
 
+describe('asking the user', () => {
+  // One accept case proves the path; a decline per guarded tool proves each of
+  // them acts on the answer rather than falling through. They differ only in
+  // arguments, so the declines are a table.
+
+  it('asks, and deletes the link once they accept', async () => {
+    const calls = stubFetch(() => envelopeResponse(linkFixture()));
+    const client = await connect({}, 'accept');
+    const result = await client.callTool({
+      name: 'delete_link',
+      arguments: { link_id: 42 },
+    });
+    expect(client.prompts).toHaveLength(1);
+    expect(result.isError).toBeFalsy();
+    expect(calls.filter((c) => c.init?.method === 'DELETE')).toHaveLength(1);
+  });
+
+  it('deletes nothing when the user closes the dialog', async () => {
+    // Cancel is not a yes: for an irreversible delete the only safe reading of
+    // "no answer" is no.
+    const calls = stubFetch(() => envelopeResponse(linkFixture()));
+    const client = await connect({}, 'cancel');
+    const result = await client.callTool({
+      name: 'delete_link',
+      arguments: { link_id: 42 },
+    });
+    expect(result.isError).toBe(true);
+    expect(calls.filter((c) => c.init?.method === 'DELETE')).toHaveLength(0);
+  });
+
+  it('offers no token to a client it can ask properly', async () => {
+    // The control that makes the rest mean something: the token path is
+    // unchanged, so a server that silently never asked would still pass every
+    // other confirmation test in this file.
+    stubFetch(() => envelopeResponse(linkFixture()));
+    const client = await connect({}, 'decline');
+    const result = await client.callTool({
+      name: 'delete_link',
+      arguments: { link_id: 42 },
+    });
+    expect(resultText(result)).not.toMatch(/confirm_token/);
+  });
+
+  it.each([
+    ['delete_link', { link_id: 42 }],
+    ['bulk_delete_links', { link_ids: [1, 2] }],
+    ['represerve_link', { link_id: 42 }],
+    ['delete_link_preservations', { link_ids: [1, 2] }],
+    [
+      'bulk_update_links',
+      { link_ids: [1, 2], tags: ['a'], replace_tags: false },
+    ],
+    ['update_link', { link_id: 42, url: 'https://example.test/other' }],
+    ['delete_collection', { collection_id: 7 }],
+    ['delete_tags', { tag_ids: [3] }],
+    ['merge_tags', { tag_ids: [3, 4], new_name: 'merged' }],
+    ['delete_rss_subscription', { rss_subscription_id: 5 }],
+  ])('%s does nothing when the user declines', async (name, args) => {
+    const calls = stubFetch(() =>
+      envelopeResponse({
+        ...linkFixture(),
+        ...collectionFixture(),
+        ...tagFixture(),
+      })
+    );
+    const client = await connect({}, 'decline');
+    const result = await client.callTool({
+      name,
+      arguments: args as Record<string, unknown>,
+    });
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toMatch(/declined/);
+    expect(
+      calls.filter((c) =>
+        ['POST', 'PUT', 'DELETE'].includes(c.init?.method ?? '')
+      )
+    ).toHaveLength(0);
+  });
+});
+
 describe('delete_link', () => {
   it('refuses the first call, then deletes with the issued token', async () => {
     const calls = stubFetch(() => envelopeResponse(linkFixture()));
-    const client = await connectClient();
+    const client = await connect();
 
     const first = await client.callTool({
       name: 'delete_link',
@@ -276,7 +356,7 @@ describe('delete_link', () => {
     expect(calls.filter((c) => c.init?.method === 'DELETE')).toHaveLength(0);
     expect(resultText(first)).toMatch(/confirm_token/);
 
-    const token = confirmTokenFrom(first);
+    const token = tokenOf(first);
     const second = await client.callTool({
       name: 'delete_link',
       arguments: { link_id: 42, confirm_token: token },
@@ -294,7 +374,7 @@ describe('delete_link', () => {
 
   it('rejects a guessed token', async () => {
     const calls = stubFetch(() => envelopeResponse(linkFixture()));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'delete_link',
       arguments: { link_id: 42, confirm_token: 'deadbeefdeadbeef' },
@@ -306,12 +386,12 @@ describe('delete_link', () => {
 
   it('does not accept a token issued for a different link', async () => {
     stubFetch(() => envelopeResponse(linkFixture()));
-    const client = await connectClient();
+    const client = await connect();
     const first = await client.callTool({
       name: 'delete_link',
       arguments: { link_id: 42 },
     });
-    const token = confirmTokenFrom(first);
+    const token = tokenOf(first);
 
     const result = await client.callTool({
       name: 'delete_link',
@@ -330,7 +410,7 @@ describe('delete_link', () => {
         })
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const first = await client.callTool({
       name: 'delete_link',
       arguments: { link_id: 42 },
@@ -346,14 +426,14 @@ describe('delete_link', () => {
 describe('bulk_delete_links', () => {
   it('binds the token to the exact id set', async () => {
     const calls = stubFetch(() => envelopeResponse('Success.'));
-    const client = await connectClient();
+    const client = await connect();
 
     const first = await client.callTool({
       name: 'bulk_delete_links',
       arguments: { link_ids: [1, 2] },
     });
     expect(calls).toHaveLength(0);
-    const token = confirmTokenFrom(first);
+    const token = tokenOf(first);
 
     // Widening the set must invalidate the confirmation.
     const widened = await client.callTool({
@@ -379,13 +459,13 @@ describe('bulk_update_links', () => {
     const calls = stubFetch(() =>
       envelopeResponse('All links updated successfully')
     );
-    const client = await connectClient();
+    const client = await connect();
 
     const first = await client.callTool({
       name: 'bulk_update_links',
       arguments: { link_ids: [1, 2], tags: ['keep'], replace_tags: false },
     });
-    const token = confirmTokenFrom(first);
+    const token = tokenOf(first);
 
     // Same ids, but now a destructive replace with an empty list.
     const escalated = await client.callTool({
@@ -419,7 +499,7 @@ describe('bulk_update_links', () => {
 
   it('spells out that an empty replace strips every tag', async () => {
     stubFetch(() => envelopeResponse('ok'));
-    const client = await connectClient();
+    const client = await connect();
     const first = await client.callTool({
       name: 'bulk_update_links',
       arguments: { link_ids: [1], tags: [], replace_tags: true },
@@ -430,38 +510,102 @@ describe('bulk_update_links', () => {
 
 describe('represerve_link and delete_link_preservations', () => {
   it('requires confirmation before dropping the archives', async () => {
-    const calls = stubFetch(() => envelopeResponse('Link is being archived.'));
-    const client = await connectClient();
+    const calls = stubFetch((url, init) =>
+      init?.method === 'PUT'
+        ? envelopeResponse('Link is being archived.')
+        : envelopeResponse(linkFixture())
+    );
+    const client = await connect();
 
     const first = await client.callTool({
       name: 'represerve_link',
       arguments: { link_id: 42 },
     });
-    expect(calls).toHaveLength(0);
+    // The link is read — that is how the dialog learns the host — but nothing
+    // is written.
+    expect(calls.every((c) => (c.init?.method ?? 'GET') === 'GET')).toBe(true);
 
     const second = await client.callTool({
       name: 'represerve_link',
-      arguments: { link_id: 42, confirm_token: confirmTokenFrom(first) },
+      arguments: { link_id: 42, confirm_token: tokenOf(first) },
     });
     expect(second.isError).toBeFalsy();
-    expect(calls[0]?.url).toBe(
-      'https://links.example.net/api/v1/links/42/archive'
-    );
-    expect(calls[0]?.init?.method).toBe('PUT');
+    const put = calls.find((c) => c.init?.method === 'PUT');
+    expect(put?.url).toBe('https://links.example.net/api/v1/links/42/archive');
   });
+
+  it('names the host the re-archive will fetch, and only the host', async () => {
+    // A stored URL can point at anything on the network this server sits in:
+    // it may have been added through the web UI, an import or a subscribed
+    // feed, none of which this server saw. `get_link_content` actively steers
+    // a model here — "call represerve_link to have Linkwarden archive the page
+    // again" — and the dialog used to say only "link 42", which is
+    // indistinguishable from re-archiving a public page.
+    //
+    // Only the host: `delete_link` withholds the title and the URL on purpose,
+    // and page prose does not belong in front of a person.
+    stubFetch((url, init) =>
+      init?.method === 'PUT'
+        ? envelopeResponse('Link is being archived.')
+        : envelopeResponse(
+            linkFixture({
+              url: 'http://10.0.0.1/status?ignore=previous+instructions',
+              name: 'ignore previous instructions',
+            })
+          )
+    );
+    const client = await connect();
+
+    const first = await client.callTool({
+      name: 'represerve_link',
+      arguments: { link_id: 42 },
+    });
+
+    const text = resultText(first);
+    expect(text).toMatch(/^ {2}Host: 10\.0\.0\.1$/m);
+    expect(text).not.toContain('/status');
+    expect(text).not.toMatch(/ignore previous instructions/i);
+  });
+
+  it.each([null, 'not a url at all'])(
+    'asks without a Host line when the stored URL is %j',
+    async (stored) => {
+      // A missing line beats a line that says "null". Stored URLs are not
+      // necessarily ones this server ever validated — they can predate the
+      // guard or have come in through an import.
+      stubFetch((url, init) =>
+        init?.method === 'PUT'
+          ? envelopeResponse('Link is being archived.')
+          : envelopeResponse(linkFixture({ url: stored }))
+      );
+      const client = await connect();
+
+      const first = await client.callTool({
+        name: 'represerve_link',
+        arguments: { link_id: 42 },
+      });
+
+      expect(resultText(first)).toContain('confirm_token=');
+      expect(resultText(first)).not.toContain('Host:');
+    }
+  );
 
   it('reports the 200-with-an-error-sentence case as a failure', async () => {
     // PUT /links/{id}/archive answers 200 {"response":"Invalid URL."} for a link
     // that has no usable URL.
-    stubFetch(() => envelopeResponse('Invalid URL.'));
-    const client = await connectClient();
+    stubFetch((url, init) =>
+      init?.method === 'PUT'
+        ? envelopeResponse('Invalid URL.')
+        : envelopeResponse(linkFixture())
+    );
+    const client = await connect();
     const first = await client.callTool({
       name: 'represerve_link',
       arguments: { link_id: 42 },
     });
     const second = await client.callTool({
       name: 'represerve_link',
-      arguments: { link_id: 42, confirm_token: confirmTokenFrom(first) },
+      arguments: { link_id: 42, confirm_token: tokenOf(first) },
     });
 
     expect(second.isError).toBe(true);
@@ -471,14 +615,14 @@ describe('represerve_link and delete_link_preservations', () => {
 
   it('deletes preservations against the bulk archive route', async () => {
     const calls = stubFetch(() => envelopeResponse('Success.'));
-    const client = await connectClient();
+    const client = await connect();
     const first = await client.callTool({
       name: 'delete_link_preservations',
       arguments: { link_ids: [42, 43] },
     });
     await client.callTool({
       name: 'delete_link_preservations',
-      arguments: { link_ids: [42, 43], confirm_token: confirmTokenFrom(first) },
+      arguments: { link_ids: [42, 43], confirm_token: tokenOf(first) },
     });
 
     expect(calls[0]?.url).toBe(
@@ -496,7 +640,7 @@ describe('update_collection merges instead of replacing', () => {
         ? envelopeResponse(collectionFixture({ name: 'Renamed' }))
         : envelopeResponse(collectionFixture())
     );
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'update_collection',
       arguments: { collection_id: 7, name: 'Renamed' },
@@ -517,7 +661,7 @@ describe('update_collection merges instead of replacing', () => {
         ? envelopeResponse(collectionFixture({ parentId: null }))
         : envelopeResponse(collectionFixture({ parentId: 3 }))
     );
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'update_collection',
       arguments: { collection_id: 7, parent_id: 0 },
@@ -531,7 +675,7 @@ describe('update_collection merges instead of replacing', () => {
         ? envelopeResponse(collectionFixture({ parentId: 3 }))
         : envelopeResponse(collectionFixture({ parentId: 3 }))
     );
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'update_collection',
       arguments: { collection_id: 7, name: 'Renamed' },
@@ -545,7 +689,7 @@ describe('update_collection merges instead of replacing', () => {
         ? envelopeResponse(collectionFixture({ isPublic: true }))
         : envelopeResponse(collectionFixture({ isPublic: false }))
     );
-    const client = await connectClient();
+    const client = await connect();
 
     const first = await client.callTool({
       name: 'update_collection',
@@ -562,7 +706,7 @@ describe('update_collection merges instead of replacing', () => {
       arguments: {
         collection_id: 7,
         is_public: true,
-        confirm_token: confirmTokenFrom(first),
+        confirm_token: tokenOf(first),
       },
     });
     expect(second.isError).toBeFalsy();
@@ -575,7 +719,7 @@ describe('update_collection merges instead of replacing', () => {
         ? envelopeResponse(collectionFixture({ isPublic: false }))
         : envelopeResponse(collectionFixture({ isPublic: true }))
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'update_collection',
       arguments: { collection_id: 7, is_public: false },
@@ -587,7 +731,7 @@ describe('update_collection merges instead of replacing', () => {
 describe('delete_collection', () => {
   it('reports the cascade in counts and withholds the name', async () => {
     const calls = stubFetch(() => envelopeResponse(collectionFixture()));
-    const client = await connectClient();
+    const client = await connect();
     const first = await client.callTool({
       name: 'delete_collection',
       arguments: { collection_id: 7 },
@@ -602,7 +746,7 @@ describe('delete_collection', () => {
 
     const second = await client.callTool({
       name: 'delete_collection',
-      arguments: { collection_id: 7, confirm_token: confirmTokenFrom(first) },
+      arguments: { collection_id: 7, confirm_token: tokenOf(first) },
     });
     expect(second.isError).toBeFalsy();
     expect(calls.filter((c) => c.init?.method === 'DELETE')).toHaveLength(1);
@@ -612,7 +756,7 @@ describe('delete_collection', () => {
 describe('tag writes', () => {
   it('sends the name as "label" and only the given archival flags', async () => {
     const calls = stubFetch(() => envelopeResponse([tagFixture()]));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'create_tags',
       arguments: {
@@ -631,22 +775,96 @@ describe('tag writes', () => {
     });
   });
 
-  it('renames a tag', async () => {
+  it('renames a tag once a person agrees', async () => {
     const calls = stubFetch(() =>
       envelopeResponse(tagFixture({ name: 'refs' }))
     );
-    const client = await connectClient();
+    const client = await connect({}, 'accept');
     await client.callTool({
       name: 'rename_tag',
       arguments: { tag_id: 3, name: 'refs' },
     });
+    expect(client.prompts).toHaveLength(1);
     expect(calls[0]?.url).toBe('https://links.example.net/api/v1/tags/3');
     expect(requestBody(calls[0]!)).toEqual({ name: 'refs' });
   });
 
+  it('asks before a rename, because every link carrying the tag follows', async () => {
+    // Linkwarden keeps no history of what a tag used to be called, and a saved
+    // search or a habit built on the old name simply stops matching. wikijs
+    // guards update_tag for the same reason.
+    const calls = stubFetch(() => envelopeResponse(tagFixture()));
+    const client = await connect({}, 'decline');
+    const result = await client.callTool({
+      name: 'rename_tag',
+      arguments: { tag_id: 3, name: 'refs' },
+    });
+    expect(result.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('binds a rename approval to the new name, not just the tag', async () => {
+    // An approval for "rename 3 to reading" must not execute
+    // "rename 3 to archive" — the model chooses the second name.
+    const calls = stubFetch(() => envelopeResponse(tagFixture()));
+    const client = await connect();
+    const first = await client.callTool({
+      name: 'rename_tag',
+      arguments: { tag_id: 3, name: 'reading' },
+    });
+    const token = /confirm_token="([a-f0-9]+)"/.exec(resultText(first))?.[1];
+    expect(token).toBeDefined();
+
+    const swapped = await client.callTool({
+      name: 'rename_tag',
+      arguments: { tag_id: 3, name: 'archive', confirm_token: token },
+    });
+    expect(swapped.isError).toBe(true);
+    expect(resultText(swapped)).toContain('issued for different arguments');
+    expect(calls).toHaveLength(0);
+
+    const done = await client.callTool({
+      name: 'rename_tag',
+      arguments: { tag_id: 3, name: 'reading', confirm_token: token },
+    });
+    expect(done.isError).toBeFalsy();
+    expect(calls).toHaveLength(1);
+  });
+
+  it('does not let a numeric tag name collide with a tag id', async () => {
+    // `setResourceKey` sorts its target list and `String(tag_id)` erases the
+    // difference between an id and a name, so `{tag_id: 7, name: "12"}` and
+    // `{tag_id: 12, name: "7"}` used to fingerprint the same `["7","12"]` —
+    // one approval, two different renames. Both pass the schema: a tag called
+    // "12" is legal, and year and issue-number tags are ordinary. The targets
+    // are labelled now.
+    const calls = stubFetch(() => envelopeResponse(tagFixture()));
+    const client = await connect();
+    const first = await client.callTool({
+      name: 'rename_tag',
+      arguments: { tag_id: 7, name: '12' },
+    });
+    const token = tokenOf(first);
+
+    const swapped = await client.callTool({
+      name: 'rename_tag',
+      arguments: { tag_id: 12, name: '7', confirm_token: token },
+    });
+    expect(swapped.isError).toBe(true);
+    expect(resultText(swapped)).toContain('issued for different arguments');
+    expect(calls).toHaveLength(0);
+
+    const done = await client.callTool({
+      name: 'rename_tag',
+      arguments: { tag_id: 7, name: '12', confirm_token: token },
+    });
+    expect(done.isError).toBeFalsy();
+    expect(calls[0]?.url).toBe('https://links.example.net/api/v1/tags/7');
+  });
+
   it('confirms tag deletion against the bulk route', async () => {
     const calls = stubFetch(() => envelopeResponse('Success.'));
-    const client = await connectClient();
+    const client = await connect();
     const first = await client.callTool({
       name: 'delete_tags',
       arguments: { tag_ids: [3, 4] },
@@ -655,7 +873,7 @@ describe('tag writes', () => {
 
     await client.callTool({
       name: 'delete_tags',
-      arguments: { tag_ids: [3, 4], confirm_token: confirmTokenFrom(first) },
+      arguments: { tag_ids: [3, 4], confirm_token: tokenOf(first) },
     });
     expect(calls[0]?.url).toBe('https://links.example.net/api/v1/tags');
     expect(requestBody(calls[0]!)).toEqual({ tagIds: [3, 4] });
@@ -665,12 +883,12 @@ describe('tag writes', () => {
     const calls = stubFetch(() =>
       envelopeResponse(tagFixture({ name: 'refs' }))
     );
-    const client = await connectClient();
+    const client = await connect();
     const first = await client.callTool({
       name: 'merge_tags',
       arguments: { tag_ids: [3, 4], new_name: 'refs' },
     });
-    const token = confirmTokenFrom(first);
+    const token = tokenOf(first);
 
     const renamed = await client.callTool({
       name: 'merge_tags',
@@ -706,7 +924,7 @@ describe('rss writes', () => {
         collectionId: 7,
       })
     );
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'create_rss_subscription',
       arguments: {
@@ -726,7 +944,7 @@ describe('rss writes', () => {
     const calls = stubFetch(() =>
       envelopeResponse('RSS subscription deleted.')
     );
-    const client = await connectClient();
+    const client = await connect();
     const first = await client.callTool({
       name: 'delete_rss_subscription',
       arguments: { rss_subscription_id: 5 },
@@ -737,7 +955,7 @@ describe('rss writes', () => {
       name: 'delete_rss_subscription',
       arguments: {
         rss_subscription_id: 5,
-        confirm_token: confirmTokenFrom(first),
+        confirm_token: tokenOf(first),
       },
     });
     expect(second.isError).toBeFalsy();
@@ -748,7 +966,7 @@ describe('rss writes', () => {
 describe('gaps in the write paths', () => {
   it('sends every optional field of create_collection', async () => {
     const calls = stubFetch(() => envelopeResponse(collectionFixture()));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'create_collection',
       arguments: {
@@ -768,7 +986,7 @@ describe('gaps in the write paths', () => {
 
   it('sends only the name when nothing else is given', async () => {
     const calls = stubFetch(() => envelopeResponse(collectionFixture()));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'create_collection',
       arguments: { name: 'Bare' },
@@ -778,7 +996,7 @@ describe('gaps in the write paths', () => {
 
   it('rejects an invalid publish token', async () => {
     const calls = stubFetch(() => envelopeResponse(collectionFixture()));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'update_collection',
       arguments: {
@@ -793,7 +1011,7 @@ describe('gaps in the write paths', () => {
 
   it('reports a collection that is not visible', async () => {
     stubFetch(() => envelopeResponse(null));
-    const client = await connectClient();
+    const client = await connect();
     for (const name of ['update_collection', 'delete_collection']) {
       const result = await client.callTool({
         name,
@@ -804,8 +1022,8 @@ describe('gaps in the write paths', () => {
   });
 
   it('rejects an invalid token on the remaining destructive tools', async () => {
-    const calls = stubFetch(() => envelopeResponse('Success.'));
-    const client = await connectClient();
+    const calls = stubFetch(() => envelopeResponse(linkFixture()));
+    const client = await connect();
     for (const [name, args] of [
       ['delete_tags', { tag_ids: [3] }],
       ['merge_tags', { tag_ids: [3], new_name: 'x' }],
@@ -819,12 +1037,16 @@ describe('gaps in the write paths', () => {
       });
       expect(result.isError, name).toBe(true);
     }
-    expect(calls).toHaveLength(0);
+    // `represerve_link` reads the link to name the host in the dialog, so this
+    // is about writes rather than about requests: nothing may be changed.
+    expect(calls.filter((c) => (c.init?.method ?? 'GET') !== 'GET')).toEqual(
+      []
+    );
   });
 
   it('accepts a collection name for an RSS subscription', async () => {
     const calls = stubFetch(() => envelopeResponse(rssFixtureBody()));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'create_rss_subscription',
       arguments: {
@@ -842,7 +1064,7 @@ describe('gaps in the write paths', () => {
 
   it('refuses both collection arguments for an RSS subscription', async () => {
     const calls = stubFetchRejecting();
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'create_rss_subscription',
       arguments: {
@@ -858,7 +1080,7 @@ describe('gaps in the write paths', () => {
 
   it('creates a link by collection name and without tags', async () => {
     const calls = stubFetch(() => envelopeResponse(linkFixture()));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'create_link',
       arguments: { url: 'https://example.net/x', collection_name: 'Inbox' },
@@ -873,7 +1095,7 @@ describe('gaps in the write paths', () => {
 
   it('handles a create_tags answer that is not an array', async () => {
     stubFetch(() => envelopeResponse({ unexpected: true }));
-    const client = await connectClient();
+    const client = await connect();
     const result = await client.callTool({
       name: 'create_tags',
       arguments: { names: ['x'] },
@@ -888,7 +1110,7 @@ describe('gaps in the write paths', () => {
         ? envelopeResponse(linkFixture())
         : envelopeResponse(linkFixture())
     );
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'update_link',
       arguments: { link_id: 42, collection_id: 9 },

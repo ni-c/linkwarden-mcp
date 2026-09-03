@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Integration Feed</title>
+  <link href="http://site/atom.xml" rel="self"/>
+  <link href="http://site/"/>
+  <id>urn:uuid:linkwarden-integration-feed</id>
+  <updated>2026-09-01T10:00:00Z</updated>
+  <entry>
+    <title>First feed entry</title>
+    <link href="http://site/index.html"/>
+    <id>urn:uuid:linkwarden-entry-1</id>
+    <updated>2026-09-01T10:00:00Z</updated>
+    <summary>The entry the RSS subscription should pick up.</summary>
+  </entry>
+</feed>

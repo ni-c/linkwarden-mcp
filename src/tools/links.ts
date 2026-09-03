@@ -1,8 +1,11 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { LinkwardenApi } from '../api.js';
-import { jsonResult, run, textResult, untrustedResult } from '../result.js';
+import {
+  link,
+  notes,
+  truncationNote,
+  untrustedFields,
+} from '../output-schema.js';
 import {
   ArchivedFormat,
   collectionId,
@@ -15,12 +18,19 @@ import {
   withQuery,
 } from '../schema.js';
 import {
+  clamp,
+  MAX_DESCRIPTION_CHARS,
+  MAX_NAME_CHARS,
   Notes,
   preservedFormats,
   shapeLink,
   UNTRUSTED_METADATA_NOTE,
   type RawLink,
 } from '../shape.js';
+
+import type { LinkwardenApi } from '../api.js';
+import { READ_ONLY } from './annotations.js';
+import { errorResult, run, untrustedResult } from '../result.js';
 
 /**
  * Upper bound on the links returned in one call. Linkwarden itself pages at
@@ -62,11 +72,18 @@ const SEARCH_SYNTAX = [
   '',
   'Where Meilisearch is available the filters are:',
   '  url:  name:  description:  type:  collection:  tag:  pinned:  public:  before:  after:',
-  'Quote values that contain spaces, e.g. collection:"Read later". Prefix a filter',
-  'with ! to negate it, e.g. !tag:archive. pinned: and public: take true or false;',
-  'before: and after: take a date such as 2026-01-31. If the instance sets',
-  'SEARCH_FILTER_LIMIT, field filters beyond that count are dropped silently, so',
-  'prefer few, specific filters.',
+  '',
+  'These filters match the WHOLE value, not a substring. `name:Report` does not',
+  'find a link called "Quarterly Report" — it finds one whose title is exactly',
+  '"Report". Quote values that contain spaces: name:"Quarterly Report". An empty',
+  'result from a field filter therefore usually means the value was a fragment,',
+  'not that the filter is unsupported. Plain text without a filter DOES match',
+  'substrings, so search for the fragment on its own when unsure.',
+  '',
+  'Prefix a filter with ! to negate it, e.g. !tag:archive. pinned: and public:',
+  'take true or false; before: and after: take a date such as 2026-01-31. If the',
+  'instance sets SEARCH_FILTER_LIMIT, field filters beyond that count are dropped',
+  'silently, so prefer few, specific filters.',
 ].join('\n');
 
 export function registerLinkReadTools(
@@ -84,8 +101,12 @@ export function registerLinkReadTools(
         `${SEARCH_SYNTAX}\n\n` +
         'Returns at most ' +
         `${MAX_LINKS} links plus a next_cursor for the following page. Article text ` +
-        'is not included; use get_link_content for that.',
-      inputSchema: {
+        'is not included; use get_link_content for that.\n\n' +
+        'Indexing is asynchronous where Meilisearch is used: a link created ' +
+        'moments ago is not searchable yet. An empty result straight after a ' +
+        'write means the index has not caught up, not that the write failed — ' +
+        'get_link by id confirms it exists.',
+      inputSchema: z.object({
         query: z
           .string()
           .max(2048)
@@ -101,8 +122,21 @@ export function registerLinkReadTools(
           .describe('Only return links pinned by the authenticated account'),
         sort: linkSort,
         cursor,
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        truncated: truncationNote,
+        count: z.number().int(),
+        next_cursor: z
+          .number()
+          .int()
+          .describe('Pass as cursor to continue; null when the list ends.')
+          .nullable()
+          .optional(),
+        links: z.array(link),
+        notes,
+      }),
     },
     async ({ query, collection_id, tag_id, pinned_only, sort, cursor: from }) =>
       run(async () => {
@@ -155,7 +189,7 @@ export function registerLinkReadTools(
           );
         }
 
-        return jsonResult(
+        return untrustedResult(
           {
             count: links.length,
             next_cursor: nextCursor,
@@ -177,13 +211,18 @@ export function registerLinkReadTools(
         'Fetches one bookmark with its tags, collection and which preserved ' +
         'formats exist. Does not include the archived page text — use ' +
         'get_link_content for that.',
-      inputSchema: { link_id: linkId },
-      annotations: { readOnlyHint: true },
+      inputSchema: z.object({ link_id: linkId }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        link: link.nullable(),
+        notes,
+      }),
     },
     async ({ link_id }) =>
       run(async () => {
         const link = (await api.get(idPath('/links', link_id))) as RawLink;
-        return jsonResult({
+        return untrustedResult({
           link: shapeLink(link),
           notes: [UNTRUSTED_METADATA_NOTE],
         });
@@ -202,8 +241,12 @@ export function registerLinkReadTools(
         'text.\n\n' +
         'Long articles are returned in slices — pass the offset from the previous ' +
         'result to continue. If the link has no readable archive, the tool says so ' +
-        'and represerve_link can create one.',
-      inputSchema: {
+        'and represerve_link can create one.\n\n' +
+        'Preservation is asynchronous: Linkwarden queues the page and a worker ' +
+        'drives a headless browser over it, which takes minutes. A link created ' +
+        'moments ago has no readable archive yet, and that is not an error — ' +
+        'get_worker_stats shows the queue.',
+      inputSchema: z.object({
         link_id: linkId,
         offset: z
           .number()
@@ -220,8 +263,44 @@ export function registerLinkReadTools(
           .describe(
             `Maximum characters to return, default ${DEFAULT_CONTENT_CHARS}`
           ),
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      // The article text is the least trusted thing this server returns:
+      // whoever controls the target site wrote it.
+      outputSchema: z
+        .object({
+          ...untrustedFields,
+          truncated: truncationNote,
+          link_id: z.number().int(),
+          title: z.string().describe('The article title.').nullable(),
+          byline: z.string().describe('The article byline.').nullable(),
+          site_name: z.string().describe('The site name.').nullable(),
+          published_time: z
+            .string()
+            .describe('When the article says it was published.')
+            .nullable()
+            .optional(),
+          lang: z.string().describe('Language tag.').nullable().optional(),
+          length: z.number().optional(),
+          excerpt: z
+            .string()
+            .describe('Short summary of the article.')
+            .nullable()
+            .optional(),
+          offset: z.number().int().optional(),
+          returned_chars: z.number().int().optional(),
+          total_chars: z.number().int().optional(),
+          next_offset: z
+            .number()
+            .int()
+            .describe('Pass as offset to read on; null at the end of the text.')
+            .nullable()
+            .optional(),
+          text: z.string().optional(),
+          notes,
+        })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     async ({ link_id, offset, max_chars }) =>
       run(async () => {
@@ -233,7 +312,11 @@ export function registerLinkReadTools(
           const others = Object.entries(available)
             .filter(([, exists]) => exists)
             .map(([format]) => format);
-          return textResult(
+          // An error result: the tool was asked for the text of a page and
+          // has none to give. It also has to be one — a tool that declares an
+          // `outputSchema` may not answer without `structuredContent` unless
+          // the result is an error.
+          return errorResult(
             `Link ${link_id} has no readable archive.` +
               (others.length > 0
                 ? ` Preserved formats that do exist: ${others.join(', ')} — those are binary or raw HTML and cannot be read as text.`
@@ -249,12 +332,20 @@ export function registerLinkReadTools(
           })
         );
         if (!raw.contentType.includes('application/json')) {
-          return textResult(
+          return errorResult(
             `Linkwarden returned ${raw.contentType || 'an unknown content type'} for the readable archive of link ${link_id} instead of JSON. The archive is probably corrupt; represerve_link recreates it.`
           );
         }
 
-        const article = JSON.parse(raw.text) as {
+        // Guarded for the same reason the content-type check above exists, and
+        // for one more. `api.request()` already treats "the header says JSON,
+        // the body is not" as a thing that happens; `getRaw` has no such
+        // fallback, so an archive that is truncated or corrupt threw here.
+        // `run()` then answered with Node's parser message, which quotes about
+        // ten characters of the body — text from a saved foreign page, reaching
+        // the model **outside** the untrusted wrapper that the rest of this
+        // handler is careful to route everything through.
+        let article: {
           title?: string;
           byline?: string | null;
           siteName?: string | null;
@@ -264,6 +355,13 @@ export function registerLinkReadTools(
           excerpt?: string | null;
           textContent?: string;
         };
+        try {
+          article = JSON.parse(raw.text) as typeof article;
+        } catch {
+          return errorResult(
+            `Linkwarden returned a readable archive for link ${link_id} that is not valid JSON. The archive is probably corrupt; represerve_link recreates it.`
+          );
+        }
 
         const text = article.textContent ?? '';
         const start = offset ?? 0;
@@ -285,15 +383,28 @@ export function registerLinkReadTools(
 
         // Everything below this point was written by whoever controls the saved
         // page, so it goes out through the untrusted wrapper.
+        //
+        // The metadata is clamped for the reason `shape.ts` clamps the same
+        // fields on every other path: Readability copies them straight out of
+        // the page. A `<meta name="description">` of 260 kB becomes a 260 kB
+        // `excerpt`, and unclamped that alone filled the whole result budget —
+        // `text` never appeared, and the cut landed inside the excerpt. `text`
+        // itself needs no clamp here; `max_chars` already bounds it.
+        const metaFollowUp = `call get_link with link_id=${link_id} for the full record`;
         return untrustedResult(
           {
             link_id,
-            title: article.title ?? null,
-            byline: article.byline ?? null,
-            site_name: article.siteName ?? null,
-            published_time: article.publishedTime ?? null,
-            language: article.lang ?? null,
-            excerpt: article.excerpt ?? null,
+            title: clamp(article.title, MAX_NAME_CHARS, metaFollowUp) ?? null,
+            byline: clamp(article.byline, MAX_NAME_CHARS, metaFollowUp) ?? null,
+            site_name:
+              clamp(article.siteName, MAX_NAME_CHARS, metaFollowUp) ?? null,
+            published_time:
+              clamp(article.publishedTime, MAX_NAME_CHARS, metaFollowUp) ??
+              null,
+            language: clamp(article.lang, MAX_NAME_CHARS, metaFollowUp) ?? null,
+            excerpt:
+              clamp(article.excerpt, MAX_DESCRIPTION_CHARS, metaFollowUp) ??
+              null,
             total_chars: text.length,
             offset: start,
             returned_chars: slice.length,

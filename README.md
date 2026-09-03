@@ -7,6 +7,7 @@
 [![license](https://img.shields.io/npm/l/linkwarden-mcp)](LICENSE)
 [![container](https://img.shields.io/badge/ghcr.io-ni--c%2Flinkwarden--mcp-blue)](https://github.com/ni-c/linkwarden-mcp/pkgs/container/linkwarden-mcp)
 [![docs](https://img.shields.io/badge/docs-linkwarden--mcp.ni--c.de-informational)](https://linkwarden-mcp.ni-c.de)
+[![HTTP • via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-6f42c1)](https://mcp-hub.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
@@ -42,6 +43,22 @@ from eight than from twenty-eight — see
 > **v2.16.0** on 2026-08-17. Those two files are the source of truth for every tool
 > here.
 
+## What makes it different
+
+**Reads what Linkwarden preserved.** Linkwarden keeps a permanent copy of every
+page it saves. `get_link_content` serves that article text, so a saved link can be
+summarised or quoted without fetching the live site again — and long articles are
+sliced, not dumped.
+
+**Organises without clobbering.** Linkwarden's update routes replace whole
+records. This server reads the current state and merges, so changing a title
+never silently strips a link's tags or a collection's collaborators.
+
+**Output is an allowlist.** Linkwarden returns whole Prisma rows; every field in a
+result here is named explicitly. Article text stays out of list results, collection
+members' names and e-mail addresses are dropped, and a column added by a future
+release cannot land in the model's context unannounced.
+
 ## Requirements
 
 - Node.js ≥ 22
@@ -61,6 +78,7 @@ collections this server should see rather than handing it an admin token.
 | `LINKWARDEN_READ_ONLY`    | no       | `true` registers only the read tools                                               |
 | `LINKWARDEN_ALLOW_TOOLS`  | no       | Comma-separated tool names, `list_*` prefixes, or `essential` for a curated preset |
 | `LINKWARDEN_DENY_TOOLS`   | no       | Same syntax; removed from whatever `LINKWARDEN_ALLOW_TOOLS` left                   |
+| `ELICITATION`             | no       | `false` replaces the approval dialog with the two-call token. **Not prefixed**     |
 | `LINKWARDEN_INSECURE_TLS` | no       | `true` accepts self-signed certificates (scoped to this connection)                |
 
 > **Use `https://`.** Over plain http the token travels unencrypted; the server prints
@@ -146,7 +164,59 @@ docker run --rm -i \
   linkwarden-mcp
 ```
 
+### Through mcp-hub
+
+A client that cannot spawn a local process — ChatGPT connectors, Claude on the web,
+Cursor, LibreChat — reaches linkwarden-mcp through [mcp-hub](https://mcp-hub.ni-c.de): one
+container serves many stdio MCP servers over Streamable HTTP, with an OAuth 2.1 login
+behind a single password and long-lived tokens for the clients that cannot do OAuth. Its
+`/hub` endpoint puts every server behind six meta-tools, so one connector reaches all of
+them without N×tool schemas in the model's context, and it speaks both protocol revisions
+— a question this server asks travels through it to the person at the far end.
+
+Its `/config/mcp.json` uses Claude Code's format, so the entry is the one you already
+have:
+
+```json
+{
+  "mcpServers": {
+    "linkwarden": {
+      "command": "npx",
+      "args": ["-y", "linkwarden-mcp"],
+      "env": {
+        "LINKWARDEN_URL": "https://links.example.net",
+        "LINKWARDEN_TOKEN": "…",
+        "LINKWARDEN_ALLOW_TOOLS": "essential"
+      },
+      "denyTools": ["bulk_*"]
+    }
+  }
+}
+```
+
+`allowTools` and `denyTools` there are the hub's **own** per-server filter, which is not
+the same thing as `*_ALLOW_TOOLS` in `env` — the difference, and the mistake it invites,
+are in the [client guide](https://linkwarden-mcp.ni-c.de/guide/clients#through-mcp-hub).
+
 ## Tools
+
+Every tool declares an `outputSchema` and answers with `structuredContent`
+alongside the text block, so a client can use the result without parsing prose.
+Seven tools that answered with a sentence — _"Link 42 deleted."_ — now answer
+with the fields as well, and the sentence stays in the text block.
+
+The ten reading tools carry `untrusted: true` and `source: "linkwarden"` as
+fields. Bookmark titles, descriptions and above all the preserved article text
+are written by whoever controls the target site; this server has always said so
+in `notes`, which is prose a client can read but not check, and the field is
+what makes it checkable. The write tools are without it: they report an id this
+server was given and a count it made.
+
+An over-budget result still drops list entries, and an oversized untrusted
+envelope still loses characters from its largest field. Where neither leaves
+anything to give it is now an **error** rather than an envelope carrying the
+oversized document as a string: that envelope is valid JSON and not a valid
+answer, since the SDK checks a result against the schema its tool declares.
 
 ### Reading
 
@@ -166,30 +236,32 @@ docker run --rm -i \
 
 ### Writing
 
-Not registered at all when `LINKWARDEN_READ_ONLY=true`. Tools marked 🔒 require a
-confirmation token.
+Not registered at all when `LINKWARDEN_READ_ONLY=true`. Tools marked 👤 **ask a
+person** through MCP elicitation — a dialog the model cannot answer on its behalf —
+and fall back to a two-call `confirm_token` where the client cannot show one. See
+[Asking a person](https://linkwarden-mcp.ni-c.de/guide/approval).
 
 | Tool                           | Description                                                                  |
 | ------------------------------ | ---------------------------------------------------------------------------- |
 | `create_link`                  | Save a bookmark, optionally with tags and a collection (created on demand).  |
-| `update_link`                  | Change title, description, tags or collection. 🔒 only when the URL changes. |
+| `update_link`                  | Change title, description, tags or collection. 👤 only when the URL changes. |
 | `set_link_pinned`              | Pin or unpin a link for this account.                                        |
-| `delete_link` 🔒               | Delete a bookmark and its preserved copies.                                  |
-| `bulk_update_links` 🔒         | Apply one tag list and/or collection to many links.                          |
-| `bulk_delete_links` 🔒         | Delete many bookmarks at once.                                               |
-| `represerve_link` 🔒           | Drop the existing archives and preserve the page again.                      |
-| `delete_link_preservations` 🔒 | Drop the archives of several links, keeping the bookmarks.                   |
+| `delete_link` 👤               | Delete a bookmark and its preserved copies.                                  |
+| `bulk_update_links` 👤         | Apply one tag list and/or collection to many links.                          |
+| `bulk_delete_links` 👤         | Delete many bookmarks at once.                                               |
+| `represerve_link` 👤           | Drop the existing archives and preserve the page again.                      |
+| `delete_link_preservations` 👤 | Drop the archives of several links, keeping the bookmarks.                   |
 | `create_collection`            | Create a collection, optionally nested.                                      |
-| `update_collection`            | Rename, re-parent or publish a collection. 🔒 only when publishing.          |
-| `delete_collection` 🔒         | Delete a collection — cascades to its links and sub-collections.             |
+| `update_collection`            | Rename, re-parent or publish a collection. 👤 only when publishing.          |
+| `delete_collection` 👤         | Delete a collection — cascades to its links and sub-collections.             |
 | `create_tags`                  | Create tags or change their archival settings (upsert by name).              |
-| `rename_tag`                   | Rename a tag.                                                                |
-| `delete_tags` 🔒               | Delete tags; the links keep existing.                                        |
-| `merge_tags` 🔒                | Fold several tags into one new tag.                                          |
+| `rename_tag` 👤                | Rename a tag — every link that carries it follows.                           |
+| `delete_tags` 👤               | Delete tags; the links keep existing.                                        |
+| `merge_tags` 👤                | Fold several tags into one new tag.                                          |
 | `create_rss_subscription`      | Subscribe to an RSS/Atom feed.                                               |
-| `delete_rss_subscription` 🔒   | Stop polling a feed.                                                         |
+| `delete_rss_subscription` 👤   | Stop polling a feed.                                                         |
 
-### Deliberately not exposed
+## Not exposed, on purpose
 
 - **Access-token management** (`/tokens`). A tool that can mint API credentials is a
   privilege-escalation surface, and a bookmark server has no business holding one.
@@ -206,13 +278,16 @@ confirmation token.
 
 ## Safety
 
-- **Destructive tools are two-step.** The first call returns a short-lived
-  confirmation token bound to the exact target; only a second call carrying that token
-  performs the operation. A model cannot satisfy this gate on its own, and a token
+- **Destructive tools ask a person.** Where the client supports MCP elicitation they
+  raise a real dialog that the model cannot answer on its behalf. Where it does not,
+  the first call returns a short-lived token bound to the exact target and only a
+  second call carrying it performs the operation — which proves the call was made
+  twice with the same arguments and nothing more, and the text says so. An approval
   issued for one link, tag set or change cannot be replayed for another.
-- **Widening visibility counts as destructive.** Publishing a collection and changing
-  a link's URL — which deletes every preserved copy of the old page — both need a
-  confirmation, not just deletions.
+  `ELICITATION=false` takes that fallback deliberately; it never removes the guard.
+- **Losing something is not only deletion.** Publishing a collection, changing a
+  link's URL — which deletes every preserved copy of the old page — and renaming a
+  tag, which follows every link that carries it, are all asked about.
 - **Confirmation prompts never quote content from Linkwarden.** Titles, URLs,
   descriptions and collection names come from saved pages and from other users of the
   instance; only counts and ids appear in the text a model reads.
@@ -243,6 +318,11 @@ confirmation token.
 - **Residual risk:** within the permissions of the token you configure, a model that
   is asked to do something destructive and is confirmed by a user can still do it.
   Scope the account, and keep host-level permission prompts on.
+
+## Documentation
+
+The full guide, tool reference and security notes live at
+**[linkwarden-mcp.ni-c.de](https://linkwarden-mcp.ni-c.de)** (source in [`docs/`](docs/)).
 
 ## Development
 
@@ -288,6 +368,13 @@ container image to GHCR in parallel.
 If the registry step fails, fix it on `main` and run the `mcp-registry.yml` workflow by
 hand. Re-running the failed job is not an option: it checks out the immutable tag, so a
 fix on `main` could never reach it.
+
+## Contributing
+
+Issues, discussions and pull requests are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md). For vulnerabilities please use
+[private reporting](https://github.com/ni-c/linkwarden-mcp/security/advisories/new)
+rather than a public issue; the policy is in [SECURITY.md](SECURITY.md).
 
 ## License
 
