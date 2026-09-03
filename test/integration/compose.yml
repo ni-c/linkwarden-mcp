@@ -48,7 +48,7 @@ services:
   # depend on somebody else's uptime, on being polite to them, and on the
   # machine having outbound internet at all.
   site:
-    image: ${NGINX_IMAGE:-nginx:1.29-alpine}
+    image: ${NGINX_IMAGE:-nginx:1.31-alpine}
     volumes:
       - ./site:/usr/share/nginx/html:ro
     # Deliberately not published: only Linkwarden needs to reach it.
@@ -70,7 +70,7 @@ services:
       retries: 20
 
   meilisearch:
-    image: ${MEILISEARCH_IMAGE:-getmeili/meilisearch:v1.11}
+    image: ${MEILISEARCH_IMAGE:-getmeili/meilisearch:v1.53.1}
     environment:
       MEILI_MASTER_KEY: integration-only-not-a-secret
       MEILI_NO_ANALYTICS: 'true'
