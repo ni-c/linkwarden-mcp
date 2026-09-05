@@ -8,6 +8,7 @@
 [![container](https://img.shields.io/badge/ghcr.io-ni--c%2Flinkwarden--mcp-blue)](https://github.com/ni-c/linkwarden-mcp/pkgs/container/linkwarden-mcp)
 [![docs](https://img.shields.io/badge/docs-linkwarden--mcp.ni--c.de-informational)](https://linkwarden-mcp.ni-c.de)
 [![HTTP • via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-6f42c1)](https://mcp-hub.ni-c.de)
+[![Glama](https://glama.ai/mcp/servers/ni-c/linkwarden-mcp/badges/score.svg)](https://glama.ai/mcp/servers/ni-c/linkwarden-mcp)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
