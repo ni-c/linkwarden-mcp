@@ -42,10 +42,6 @@ jobs:
         if: matrix.node-version != 24
       - run: npm run test:coverage
         if: matrix.node-version == 24
-      # The tool reference is generated from the registered tools; fail if the
-      # committed file no longer matches the code.
-      - run: npm run docs:tools:check
-        if: matrix.node-version == 24
       # The diagram is rendered into four copies from one source; fail if any of
       # them was edited by hand. Only the PNG's dimensions are checked, not its
       # bytes — fonts rasterise differently here than on a workstation.

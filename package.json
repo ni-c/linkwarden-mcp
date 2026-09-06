@@ -44,8 +44,6 @@
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build",
-    "docs:tools": "node scripts/gen-tools-doc.mjs",
-    "docs:tools:check": "node scripts/gen-tools-doc.mjs --check",
     "assets": "svg-asset-set",
     "assets:check": "svg-asset-set --check"
   },

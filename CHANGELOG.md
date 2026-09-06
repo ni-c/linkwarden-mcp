@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `docs/reference/tools.md` is written by hand again. It used to be generated
+  from the registered tools, which kept it in step with the code at the price of
+  a page nobody could edit: `--check` compared it byte for byte, so every line
+  had to be derivable and a paragraph about how an endpoint really behaves had
+  nowhere to go. A test now asserts what the generator guaranteed — the page
+  documents exactly the tools that exist, marks exactly the `essential` preset,
+  and marks exactly the tools that ask a person first — and leaves the prose to
+  a person.
 - `homepage` in `package.json` points at the documentation site rather than at
   the README anchor on GitHub. It is what npm shows next to the package, and
   every one of these servers has had a documentation site for weeks.
