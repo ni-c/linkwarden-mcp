@@ -1,16 +1,19 @@
 # linkwarden-mcp
 
+<!-- badges: start -->
+
 [![CI](https://img.shields.io/github/actions/workflow/status/ni-c/linkwarden-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/linkwarden-mcp/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ni-c/linkwarden-mcp/badge)](https://scorecard.dev/viewer/?uri=github.com/ni-c/linkwarden-mcp)
+<a href="https://socket.dev/npm/package/linkwarden-mcp"><img src="https://socket.dev/api/badge/npm/package/linkwarden-mcp" alt="Socket supply-chain report" height="20"></a>
+[![Glama score](https://glama.ai/mcp/servers/ni-c/linkwarden-mcp/badges/score.svg)](https://glama.ai/mcp/servers/ni-c/linkwarden-mcp)
+<br>
 [![npm version](https://img.shields.io/npm/v/linkwarden-mcp)](https://www.npmjs.com/package/linkwarden-mcp)
-[![npm downloads](https://img.shields.io/npm/dm/linkwarden-mcp)](https://www.npmjs.com/package/linkwarden-mcp)
-[![node](https://img.shields.io/node/v/linkwarden-mcp)](https://nodejs.org)
-[![license](https://img.shields.io/npm/l/linkwarden-mcp)](LICENSE)
-[![container](https://img.shields.io/badge/ghcr.io-ni--c%2Flinkwarden--mcp-blue)](https://github.com/ni-c/linkwarden-mcp/pkgs/container/linkwarden-mcp)
-[![docs](https://img.shields.io/badge/docs-linkwarden--mcp.ni--c.de-informational)](https://linkwarden-mcp.ni-c.de)
-[![HTTP • via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-6f42c1)](https://mcp-hub.ni-c.de)
-[![Glama](https://glama.ai/mcp/servers/ni-c/linkwarden-mcp/badges/score.svg)](https://glama.ai/mcp/servers/ni-c/linkwarden-mcp)
+[![container image](https://img.shields.io/badge/ghcr.io-ni--c%2Flinkwarden--mcp-4f46e5?logo=docker&logoColor=white)](https://github.com/ni-c/linkwarden-mcp/pkgs/container/linkwarden-mcp)
+[![HTTP via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-4f46e5?logo=modelcontextprotocol&logoColor=white)](https://mcp-hub.ni-c.de)
+<br>
+[![docs](https://img.shields.io/badge/docs-linkwarden--mcp.ni--c.de-4f46e5?logo=readthedocs&logoColor=white)](https://linkwarden-mcp.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
+<!-- badges: end -->
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
 [Linkwarden](https://linkwarden.app), the self-hosted bookmark manager that keeps a
