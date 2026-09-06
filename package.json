@@ -20,7 +20,7 @@
   "bugs": {
     "url": "https://github.com/ni-c/linkwarden-mcp/issues"
   },
-  "homepage": "https://github.com/ni-c/linkwarden-mcp#readme",
+  "homepage": "https://linkwarden-mcp.ni-c.de",
   "funding": "https://github.com/sponsors/ni-c",
   "type": "module",
   "bin": {
