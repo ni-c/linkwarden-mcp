@@ -25,12 +25,21 @@ import {
   preservedFormats,
   shapeLink,
   UNTRUSTED_METADATA_NOTE,
-  type RawLink,
 } from '../shape.js';
 
 import type { LinkwardenApi } from '../api.js';
 import { READ_ONLY } from './annotations.js';
 import { errorResult, run, untrustedResult } from '../result.js';
+import {
+  cursorOf,
+  objectOf,
+  readArticle,
+  readLink,
+  readLinks,
+  recordOf,
+  skippedNote,
+  type ReadArticle,
+} from '../boundary.js';
 
 /**
  * Upper bound on the links returned in one call. Linkwarden itself pages at
@@ -153,19 +162,19 @@ export function registerLinkReadTools(
         // When Meilisearch is enabled and matches nothing, the route answers with
         // `data: []` instead of the usual `{ links, nextCursor }` object.
         const empty = Array.isArray(payload);
-        const result = empty
-          ? { links: [] as RawLink[], nextCursor: null }
-          : (payload as { links?: RawLink[]; nextCursor?: number | null });
+        const record = empty ? {} : (objectOf(payload) ?? {});
 
-        const links = (result.links ?? []).slice(0, MAX_LINKS);
+        const read = readLinks(record.links);
+        const links = read.items.slice(0, MAX_LINKS);
         const resultNotes = new Notes();
         resultNotes.add(UNTRUSTED_METADATA_NOTE);
-        if ((result.links ?? []).length > MAX_LINKS) {
+        resultNotes.add(skippedNote(read.skipped, 'link'));
+        if (read.items.length > MAX_LINKS) {
           resultNotes.add(
             `The instance returned more than ${MAX_LINKS} links; only the first ${MAX_LINKS} are shown. Narrow the query.`
           );
         }
-        const nextCursor = empty ? null : (result.nextCursor ?? null);
+        const nextCursor = empty ? null : cursorOf(record.nextCursor);
         if (nextCursor !== null) {
           resultNotes.add(
             `More links exist: call search_links again with the same arguments and cursor=${nextCursor}.`
@@ -196,7 +205,9 @@ export function registerLinkReadTools(
             links: links.map(shapeLink),
             notes: resultNotes.list(),
           },
-          nextCursor === undefined
+          // The follow-up used to interpolate the cursor even when there was
+          // none, so a shortened last page said "call again with cursor=null".
+          nextCursor === null
             ? 'Narrow the query with collection_id, tag_id or pinned_only.'
             : `Call search_links again with cursor=${nextCursor} for the next page.`
         );
@@ -221,7 +232,17 @@ export function registerLinkReadTools(
     },
     async ({ link_id }) =>
       run(async () => {
-        const rawLink = (await api.get(idPath('/links', link_id))) as RawLink;
+        const payload = await api.get(idPath('/links', link_id));
+        // `null` is Linkwarden's answer for "not visible to this account", and
+        // the schema says so (`link` is nullable). Anything else that is not a
+        // record is not an answer at all, and `recordOf` says which.
+        if (payload === null) {
+          return untrustedResult({
+            link: null,
+            notes: [`No link with id ${link_id} is visible to this account.`],
+          });
+        }
+        const rawLink = readLink(recordOf(payload, `link ${link_id}`)) ?? {};
         return untrustedResult({
           link: shapeLink(rawLink),
           notes: [UNTRUSTED_METADATA_NOTE],
@@ -306,7 +327,13 @@ export function registerLinkReadTools(
       run(async () => {
         // Check the link first: it says whether a readable archive exists at all,
         // which turns the common failure into an explanation instead of a 404.
-        const rawLink = (await api.get(idPath('/links', link_id))) as RawLink;
+        const rawLink =
+          readLink(
+            recordOf(
+              await api.get(idPath('/links', link_id)),
+              `link ${link_id}`
+            )
+          ) ?? {};
         const available = preservedFormats(rawLink);
         if (!available.readable) {
           const others = Object.entries(available)
@@ -345,25 +372,20 @@ export function registerLinkReadTools(
         // ten characters of the body — text from a saved foreign page, reaching
         // the model **outside** the untrusted wrapper that the rest of this
         // handler is careful to route everything through.
-        let article: {
-          title?: string;
-          byline?: string | null;
-          siteName?: string | null;
-          publishedTime?: string | null;
-          lang?: string | null;
-          length?: number;
-          excerpt?: string | null;
-          textContent?: string;
-        };
+        let article: ReadArticle;
         try {
-          article = JSON.parse(raw.text) as typeof article;
+          // Through the boundary, not a cast: `textContent` decides what
+          // `.slice` is called on, and `"textContent": 5` in an archive file
+          // was a `TypeError` out of the one tool whose whole subject is a
+          // stranger's document.
+          article = readArticle(JSON.parse(raw.text));
         } catch {
           return errorResult(
             `Linkwarden returned a readable archive for link ${link_id} that is not valid JSON. The archive is probably corrupt; represerve_link recreates it.`
           );
         }
 
-        const text = article.textContent ?? '';
+        const text = article.textContent;
         const start = offset ?? 0;
         const limit = max_chars ?? DEFAULT_CONTENT_CHARS;
         const slice = text.slice(start, start + limit);

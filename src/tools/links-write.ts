@@ -21,6 +21,8 @@ import {
 
 import type { LinkwardenApi } from '../api.js';
 import { shapeLink, type RawLink } from '../shape.js';
+import { readLink, readUser, recordOf, safeIntegerOf } from '../boundary.js';
+import { cleanShort } from '../text.js';
 
 /** Upper bound on how many links one bulk call may touch. */
 const MAX_BULK_LINKS = 200;
@@ -65,15 +67,20 @@ function hostOf(
 ): { label: string; value: string }[] {
   if (typeof url !== 'string') return [];
   try {
-    return [{ label: 'Host', value: new URL(url).host }];
+    // Cleaned and bounded like any other string the instance chose: a URL
+    // parser accepts a hostname of any length, and this one is read by a person
+    // in a dialog and by a model in the fallback text.
+    return [{ label: 'Host', value: cleanShort(new URL(url).host, 100) }];
   } catch {
     return [];
   }
 }
 
 async function fetchLink(api: LinkwardenApi, id: number): Promise<RawLink> {
-  const rawLink = (await api.get(idPath('/links', id))) as RawLink | null;
-  if (rawLink === null || rawLink.id === undefined) {
+  const payload = await api.get(idPath('/links', id));
+  const rawLink =
+    payload === null ? undefined : readLink(recordOf(payload, `link ${id}`));
+  if (rawLink === undefined || rawLink.id === undefined) {
     throw new Error(`link ${id} does not exist or is not accessible`);
   }
   return rawLink;
@@ -110,6 +117,11 @@ function canonical(value: string | null): string | null {
   } catch {
     return value;
   }
+}
+
+/** " from collection 7", or nothing when the instance did not send a usable id. */
+function describeCollection(id: number | undefined): string {
+  return id === undefined ? '' : ` from collection ${id}`;
 }
 
 function fingerprint(value: unknown): string {
@@ -207,7 +219,11 @@ export function registerLinkWriteTools(
           tags: (tags ?? []).map((tagName) => ({ name: tagName })),
         });
         assertNotErrorMessage(created, 'Creating the link');
-        return jsonResult({ created: shapeLink(created as RawLink) });
+        return jsonResult({
+          created: shapeLink(
+            readLink(recordOf(created, 'the created link')) ?? {}
+          ),
+        });
       })
   );
 
@@ -347,7 +363,11 @@ export function registerLinkWriteTools(
 
         const updated = await api.put(idPath('/links', link_id), body);
         assertNotErrorMessage(updated, 'Updating the link');
-        return jsonResult({ updated: shapeLink(updated as RawLink) });
+        return jsonResult({
+          updated: shapeLink(
+            readLink(recordOf(updated, 'the updated link')) ?? {}
+          ),
+        });
       })
   );
 
@@ -379,7 +399,7 @@ export function registerLinkWriteTools(
       run(async () => {
         // The route decides between connect and disconnect by comparing
         // pinnedBy[0].id with the authenticated user's id, so it has to be known.
-        const me = (await api.get('/users/me')) as { id?: number };
+        const me = readUser(await api.get('/users/me'));
         if (me.id === undefined) {
           throw new Error('could not determine the authenticated account id');
         }
@@ -397,7 +417,9 @@ export function registerLinkWriteTools(
         return jsonResult({
           link_id,
           pinned,
-          link: shapeLink(updated as RawLink),
+          link: shapeLink(
+            readLink(recordOf(updated, 'the updated link')) ?? {}
+          ),
         });
       })
   );
@@ -432,8 +454,12 @@ export function registerLinkWriteTools(
           mcp,
           confirmations,
           {
-            what: `permanently delete link ${link_id} from collection ${String(
-              rawLink.collection?.id ?? rawLink.collectionId
+            // The collection id is the instance's value, not the caller's, so
+            // it is a number or it is not named at all: a dialog sentence is
+            // the one place where an unvalidated string would be read by a
+            // person as this server's own words.
+            what: `permanently delete link ${link_id}${describeCollection(
+              safeIntegerOf(rawLink.collection?.id ?? rawLink.collectionId)
             )}, including its preserved copies`,
             consequence: 'Nothing about the link can be restored from here.',
             resourceKey: resource,

@@ -108,25 +108,41 @@ describe('ConfirmationStore', () => {
 });
 
 describe('result helpers', () => {
-  it('refuses an oversized JSON result it cannot shrink', () => {
-    // No array to drop items from. The fallback used to be an envelope
-    // carrying the oversized document as a string — valid JSON, and no longer
-    // a valid *answer*: the SDK checks a result against the schema its tool
-    // declares, so an envelope of a different shape is refused.
+  it('shortens a long field rather than refusing the whole answer', () => {
+    // A single long string is a candidate now. It used to be one only for
+    // `untrustedResult`, and `jsonResult` threw here — two shorteners, each
+    // blind to what the other could cut.
     const huge = { text: 'x'.repeat(500_000) };
+    const parsed = JSON.parse(resultText(jsonResult(huge))) as {
+      text: string;
+      truncated: { omitted_chars: Record<string, number> };
+    };
+    expect(parsed.text.length).toBeLessThan(500_000);
+    expect(parsed.truncated.omitted_chars.text).toBeGreaterThan(0);
+  });
+
+  it('refuses only when there is nothing left to shrink', () => {
+    // Many short scalars under one object: no array to thin, no string long
+    // enough to cut. There is no honest answer left, and it says so rather
+    // than answering with an envelope of a shape the tool never declared.
+    const huge = Object.fromEntries(
+      Array.from({ length: 20_000 }, (_, i) => [`field_number_${i}`, i])
+    );
     expect(() => jsonResult(huge)).toThrow(ResultTooLargeError);
   });
 
-  it('drops every item when even one of them is oversized', () => {
-    // Halving has to be able to reach zero: a single 300 kB bookmark cannot be
-    // made to fit, and returning a valid empty page beats returning broken JSON.
-    const huge = { links: [{ blob: 'x'.repeat(300_000) }] };
+  it('shortens the entry when the list has only one oversized item', () => {
+    // Halving a one-element list would answer with an empty page. Descending
+    // into it and cutting the 300 kB field keeps the bookmark and its id.
+    const huge = { links: [{ id: 7, blob: 'x'.repeat(300_000) }] };
     const parsed = JSON.parse(resultText(jsonResult(huge))) as {
-      links: unknown[];
-      truncated: { omitted_items: number };
+      links: { id: number; blob: string }[];
+      truncated: { omitted_chars: Record<string, number> };
     };
-    expect(parsed.links).toEqual([]);
-    expect(parsed.truncated.omitted_items).toBe(1);
+    expect(parsed.links).toHaveLength(1);
+    expect(parsed.links[0]?.id).toBe(7);
+    expect(parsed.links[0]?.blob.length).toBeLessThan(300_000);
+    expect(parsed.truncated.omitted_chars['links.0.blob']).toBeGreaterThan(0);
   });
 
   it('stays valid JSON when it truncates', () => {
@@ -141,11 +157,11 @@ describe('result helpers', () => {
     const text = resultText(jsonResult(huge));
     expect(() => JSON.parse(text)).not.toThrow();
     const parsed = JSON.parse(text) as {
-      truncated: { omitted_items: number; follow_up: string };
+      truncated: { dropped_entries: Record<string, number>; follow_up: string };
       links: unknown[];
     };
     expect(parsed.links.length).toBeLessThan(400);
-    expect(parsed.truncated.omitted_items).toBeGreaterThan(0);
+    expect(parsed.truncated.dropped_entries.links).toBeGreaterThan(0);
     expect(parsed.truncated.follow_up).toMatch(/next_cursor/);
   });
 
@@ -222,13 +238,30 @@ describe('result helpers', () => {
     expect(text).toMatch(/call get_link_content with offset=11/);
   });
 
-  it('refuses an oversized envelope with no string field at all', () => {
-    // Nothing to shrink: an envelope whose bulk is numbers. The fallback used
-    // to be the sliced text, which a text block tolerates and
-    // `structuredContent` cannot — so there is no honest answer left and it
-    // says so.
+  it('thins an oversized list that has no string field at all', () => {
+    // An envelope whose bulk is numbers used to be unanswerable: the shortener
+    // behind `untrustedResult` only halved the longest top-level *string*, and
+    // a list has none — which is why every read tool answered
+    // `ResultTooLargeError` for exactly the results that most needed
+    // shortening.
+    const result = untrustedResult({
+      counts: Array.from({ length: 90_000 }, (_, i) => i),
+    });
+    const parsed = result.structuredContent as {
+      counts: number[];
+      truncated: { dropped_entries: Record<string, number> };
+    };
+    expect(parsed.counts.length).toBeLessThan(90_000);
+    expect(parsed.truncated.dropped_entries.counts).toBeGreaterThan(0);
+  });
+
+  it('refuses an untrusted envelope with nothing left to shrink', () => {
     expect(() =>
-      untrustedResult({ counts: Array.from({ length: 90_000 }, (_, i) => i) })
+      untrustedResult(
+        Object.fromEntries(
+          Array.from({ length: 20_000 }, (_, i) => [`field_number_${i}`, i])
+        )
+      )
     ).toThrow(ResultTooLargeError);
   });
 

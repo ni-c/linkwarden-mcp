@@ -19,7 +19,8 @@ import {
 } from '../schema.js';
 
 import type { LinkwardenApi } from '../api.js';
-import { shapeRssSubscription, type RawRssSubscription } from '../shape.js';
+import { shapeRssSubscription } from '../shape.js';
+import { readRssSubscription, recordOf } from '../boundary.js';
 
 export function registerRssWriteTools(
   server: McpServer,
@@ -115,7 +116,11 @@ export function registerRssWriteTools(
         });
         assertNotErrorMessage(created, 'Creating the RSS subscription');
         return jsonResult({
-          created: shapeRssSubscription(created as RawRssSubscription),
+          created: shapeRssSubscription(
+            readRssSubscription(
+              recordOf(created, 'the created subscription')
+            ) ?? {}
+          ),
         });
       })
   );

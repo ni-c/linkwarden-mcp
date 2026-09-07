@@ -14,6 +14,7 @@ import {
 import type { LinkwardenApi } from '../api.js';
 import { collectionId, confirmToken, idPath } from '../schema.js';
 import { shapeCollection, type RawCollection } from '../shape.js';
+import { readCollection, recordOf, safeIntegerOf } from '../boundary.js';
 
 /**
  * The body `PUT /collections/{id}` expects.
@@ -38,6 +39,36 @@ interface CollectionUpdateBody {
     canUpdate: boolean;
     canDelete: boolean;
   }[];
+}
+
+/**
+ * The collection an update or a delete is about, read through the boundary.
+ *
+ * A `null` is Linkwarden's "not visible to this account"; anything else that is
+ * not a record is not an answer, and `recordOf` says so rather than reporting a
+ * collection with no fields.
+ */
+function readCurrentCollection(
+  payload: unknown,
+  id: number
+): RawCollection & { id: number } {
+  const current =
+    payload === null
+      ? undefined
+      : readCollection(recordOf(payload, `collection ${id}`));
+  if (current === undefined || current.id === undefined) {
+    throw new Error(`collection ${id} does not exist or is not accessible`);
+  }
+  return current as RawCollection & { id: number };
+}
+
+/**
+ * The link count in a sentence a person reads before publishing or deleting.
+ * It is the instance's number, so it is a safe integer or it is not a number.
+ */
+function describeCount(value: unknown): string {
+  const count = safeIntegerOf(value);
+  return count === undefined ? 'unknown number of' : String(count);
 }
 
 export function registerCollectionWriteTools(
@@ -86,7 +117,9 @@ export function registerCollectionWriteTools(
         });
         assertNotErrorMessage(created, 'Creating the collection');
         return jsonResult({
-          created: shapeCollection(created as RawCollection),
+          created: shapeCollection(
+            readCollection(recordOf(created, 'the created collection')) ?? {}
+          ),
         });
       })
   );
@@ -150,14 +183,10 @@ export function registerCollectionWriteTools(
       mcp
     ) =>
       run(async () => {
-        const current = (await api.get(
-          idPath('/collections', collection_id)
-        )) as RawCollection | null;
-        if (current === null || current.id === undefined) {
-          throw new Error(
-            `collection ${collection_id} does not exist or is not accessible`
-          );
-        }
+        const current = readCurrentCollection(
+          await api.get(idPath('/collections', collection_id)),
+          collection_id
+        );
         if (current.name === undefined) {
           throw new Error(
             `collection ${collection_id} came back without a name — cannot build a safe update`
@@ -186,8 +215,8 @@ export function registerCollectionWriteTools(
             mcp,
             confirmations,
             {
-              what: `publish collection ${collection_id} and the ${String(
-                current._count?.links ?? 'unknown number of'
+              what: `publish collection ${collection_id} and the ${describeCount(
+                current._count?.links
               )} link(s) in it`,
               consequence:
                 'Anyone with the URL can then read them without logging in, and search ' +
@@ -246,7 +275,9 @@ export function registerCollectionWriteTools(
         );
         assertNotErrorMessage(updated, 'Updating the collection');
         return jsonResult({
-          updated: shapeCollection(updated as RawCollection),
+          updated: shapeCollection(
+            readCollection(recordOf(updated, 'the updated collection')) ?? {}
+          ),
         });
       })
   );
@@ -283,22 +314,18 @@ export function registerCollectionWriteTools(
         const resource = setResourceKey('delete_collection', [
           String(collection_id),
         ]);
-        const current = (await api.get(
-          idPath('/collections', collection_id)
-        )) as RawCollection | null;
-        if (current === null || current.id === undefined) {
-          throw new Error(
-            `collection ${collection_id} does not exist or is not accessible`
-          );
-        }
+        const current = readCurrentCollection(
+          await api.get(idPath('/collections', collection_id)),
+          collection_id
+        );
         const outcome = await approval.requestApproval(
           server,
           mcp,
           confirmations,
           {
             what:
-              `permanently delete collection ${collection_id} together with its ${String(
-                current._count?.links ?? 'unknown number of'
+              `permanently delete collection ${collection_id} together with its ${describeCount(
+                current._count?.links
               )} link(s), their preserved copies and all sub-collections` +
               (current.members !== undefined && current.members.length > 0
                 ? `, which ${current.members.length} other member(s) also have access to`

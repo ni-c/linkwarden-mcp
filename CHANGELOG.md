@@ -12,6 +12,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.0] - 2026-09-07
 
+### Added
+
+- The server introduces itself in full. `title`, `description`, `websiteUrl` and
+  `icons` now travel with `name` and `version`, so a client that shows a server
+  to a person has something to show. All four were already in `server.json` for
+  the registry and reached no client at all; a test compares the two so they
+  cannot drift.
+- Server `instructions`. Results carry an `untrusted` marker, but that is read
+  after the fact — this is the channel a model sees before it calls anything.
+- An OpenSSF Scorecard run, weekly and on every push to `main`, reporting into
+  the Security tab next to CodeQL and Trivy. The badge is the second in the row.
+- A boundary between what the instance sends and what this server reasons about
+  (`src/boundary.ts`). Every response used to be a TypeScript cast, which is not
+  a check, and two layers behind it are: the projections call `.map` and
+  `.slice` on whatever arrived, and the SDK validates `structuredContent`
+  against the schema each tool declares. One field of the wrong type therefore
+  cost the whole answer — see **Fixed**.
+- One place where text from the instance is cleaned (`src/text.ts`): control
+  characters removed, lone surrogates repaired, quotations bounded and labelled.
+  It covers the channels a projection never touched — an error body, a `200`
+  that carries an error sentence, and the message a library wrote.
+- `actions/dependency-review-action` on pull requests. `npm audit` checks the
+  tree as it is; this checks the change a pull request makes to it, before it is
+  merged.
+- A linear-time test file. Every function that runs a pattern over operator or
+  instance text is timed at its ceiling, so the next regular expression gets its
+  line before it gets merged.
+
 ### Changed
 
 - `docs/reference/tools.md` is written by hand again. It used to be generated
@@ -25,30 +53,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `homepage` in `package.json` points at the documentation site rather than at
   the README anchor on GitHub. It is what npm shows next to the package, and
   every one of these servers has had a documentation site for weeks.
-
-### Added
-
-- The server introduces itself in full. `title`, `description`, `websiteUrl` and
-  `icons` now travel with `name` and `version`, so a client that shows a server
-  to a person has something to show. All four were already in `server.json` for
-  the registry and reached no client at all; a test compares the two so they
-  cannot drift.
-- Server `instructions`. Results carry an `untrusted` marker, but that is read
-  after the fact — this is the channel a model sees before it calls anything.
-- An OpenSSF Scorecard run, weekly and on every push to `main`, reporting into
-  the Security tab next to CodeQL and Trivy. The badge is the second in the row.
-
-### Changed
-
 - Source maps are no longer published in the npm tarball. Node reads them only
   under `--enable-source-maps`, which nothing here sets, and the maps pointed at
   a `src/` this package does not ship — so a stack trace under that flag named a
   file nobody could open. `dist/**/*.js` is unchanged; the package is about a
   fifth smaller.
+- One shortener for both kinds of result, and it descends. There were two: one
+  that dropped list entries, used by the write tools, and one that halved the
+  longest top-level string, used by every read tool — and a listing has no
+  top-level string, so the read side could not shorten anything at all. It now
+  collects every long array and every long string in the answer, one level down
+  as well, spends the largest savings first and measures once. `truncated` names
+  the path it cut and how much.
+- `LINKWARDEN_URL` is stored as the parsed URL rather than as the environment
+  string, and a query or fragment is dropped with a warning saying so. Left on
+  the value it was glued in front of every path:
+  `https://links.example.net/?debug=1` became
+  `https://links.example.net/?debug=1/api/v1/links/1`, and every call failed in a
+  way that named nothing.
+- The runtime image no longer ships yarn. npm and corepack were removed four
+  releases ago; yarn lives in `/opt/yarn-v*` with two shims in `/usr/local/bin`
+  and is a second package manager in an image whose entrypoint is plain `node`.
+- The two channels of every tool are held to each other by a test over the
+  catalogue: `JSON.parse` of the text block equals `structuredContent`, with the
+  one deliberate difference — the paragraph that says the JSON below came from a
+  stranger's page — asserted where it belongs and forbidden everywhere else.
+- Dependency bumps: `mcp-tool-allowlist` 0.2.2, `mcp-integration-harness` 0.4.1,
+  `oxlint` 1.82.0, `@types/node` 26.5.0.
 
 ### Security
 
 - **mcp-approval 0.8.2.** A sealed dialog answer is single-use since 0.8.1: the same `requestState` presented again within its lifetime used to be accepted again, and with a resource key that is the same every time — a whole stream, a fixed set of targets — every replay landed. npm users on `^0.8.0` already had the fix; the Docker image is built from the lockfile and carried 0.8.0 until this release.
+- **The access token could reach the model context through the transport's own
+  error message.** `fetch` quotes what it refuses — `Headers.append: "<value>"
+is an invalid header value.` — and for `Authorization` the value is the token.
+  A token pasted across two lines is exactly that shape, and `run()`'s generic
+  catch handed the message on as a tool result. Verified on undici 8.10 and on
+  Node's global `fetch`. Three things now stand in the way: the value is checked
+  at startup and the server refuses to start, naming the variable, the length
+  and the position but never the value; every header is checked again in front of
+  `fetch`, because a configuration can be built without the startup path; and the
+  configured token is removed from whatever a library still chose to quote.
+- **Nothing cleaned the text the instance sent.** An `ESC` and a `BEL` in a `500`
+  body reached the tool result verbatim, and the sentence a `200`-with-an-error
+  answer carries was quoted at whatever length it arrived in — up to the 8 MB
+  read ceiling, into an `isError` result that no budget measures. Both go
+  through the cleaner now, bounded and labelled as the instance's words.
+- **A failed response was read before its status was looked at.** A reverse proxy
+  answering `401` with a login page over the 8 MB ceiling surfaced as "Linkwarden
+  returned more than the 8388608 byte limit": the size rather than the status, no
+  credential hint, and a plain `Error` instead of a `LinkwardenApiError`, so the
+  `instanceof` that adds the hint did not match either. The status decides first;
+  an error body has its own 64 KiB ceiling that cuts instead of refusing.
+- **`npm ci --ignore-scripts` in the publish job**, the one job that holds an
+  OIDC token for npm Trusted Publishing. A dependency's install hook ran while
+  that token could be minted. Nothing in this tree has one — checked with
+  `npm query ':attr(scripts,[postinstall])'` and its siblings — which is what
+  makes the flag free.
+- **Diagnostics no longer echo a value that failed a check.** A 56-character
+  hexadecimal key with a colon after it _is_ a valid URL whose scheme is the key,
+  and the "must use http:// or https:// (got …)" line printed it in full; the
+  `ELICITATION` message printed its raw value. Both describe by length now, and
+  quote only a short word-shaped value — a typo is a word, a pasted secret is
+  not.
+- **Trailing-slash normalisation was quadratic.** `url.replace(/\/+$/, '')` is
+  tried from every position of the run when a character follows it: 20 000,
+  40 000 and 80 000 slashes cost 136 ms, 536 ms and 2.2 s. Operator input, so a
+  small finding — and one line, an index walk.
+- `SECURITY.md` argued that the replay path was unreachable from a default
+  protocol-version list that a hand-wired transport would have used. This server
+  serves through `serveStdio`, which negotiates `2026-07-28`. The section now
+  says what actually closes it — the nonce in `mcp-approval` 0.8.1 — and names
+  the two residual limits.
+
+### Fixed
+
+- **`list_tags` was unusable for every client that reads tool schemas.** Its
+  `outputSchema` is a closed object — `additionalProperties: false` — and the
+  handler answered `next_cursor` on every call, including when it is `null`. The
+  server-side check strips the unknown key and passes; the client's check refuses
+  the whole result with "Structured content does not match the tool's output
+  schema". It had been that way since the schemas were added, and no test saw it
+  because none of them listed the tools before calling one. The test harness now
+  lists once per connection, which is what found it.
+- **A single unexpected field from the instance took a whole answer down.** With
+  every response cast rather than read, `{"links": {}}` was
+  `slice is not a function`, `[null]` in a page was `Cannot read properties of
+null`, a link whose `tags` is an object was `map is not a function`, and
+  `"id": "5"`, `"name": 42`, `"isPrivate": "yes"`, `"nextCursor": 1e999` or `1.5`
+  were each an `Output validation error` for the listing they appeared in. Eleven
+  of them, over eight tools. A field of the wrong type is now absent, an entry
+  that cannot be read is counted in `notes`, and a cursor that is not a safe
+  integer reads as the end of the list.
+- **A listing that was too large answered with an error instead of a page.** 100
+  links, every field inside its own cap, are past the 200 000-character result
+  budget — and the shortener behind the read tools had nothing it could cut. It
+  is shortened now, and the follow-up sentence no longer says
+  `call search_links again with cursor=null`.
+- **Confirmation sentences quoted numbers the instance chose without reading them
+  as numbers.** The collection id in `delete_link`, the link count in
+  `delete_collection` and `update_collection`, and the host in `represerve_link`
+  are the instance's values in a sentence a person reads. They are read as safe
+  integers — omitted when they are not — and the host is cleaned and bounded.
 
 ## [0.3.0] - 2026-09-03
 

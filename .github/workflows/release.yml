@@ -44,7 +44,11 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match package.json version $pkg" >&2
             exit 1
           fi
-      - run: npm ci
+      # --ignore-scripts in the one job that holds an OIDC token: a dependency's
+      # install hook would otherwise run while npm Trusted Publishing can mint a
+      # token. Nothing in this tree has one — `npm query ':attr(scripts,
+      # [postinstall])'` and its install/preinstall siblings are empty.
+      - run: npm ci --ignore-scripts
       # --provenance requires a PUBLIC repository.
       - run: npm publish --provenance
 
@@ -113,6 +117,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # --verify-tag: the release is cut from the tag that triggered this
+          # run, and a tag that no longer exists must not be recreated here.
           gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
             --title "$GITHUB_REF_NAME" \
             --notes-file release-notes.md

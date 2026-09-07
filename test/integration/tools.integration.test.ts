@@ -50,6 +50,12 @@ beforeAll(async () => {
   sandbox = await bootstrap();
   asking = await startServer({ env: sandbox.env, elicit: 'accept' });
   plain = await startServer({ env: sandbox.env });
+  // Listed here rather than only at the end of the file: the SDK's client-side
+  // check of `structuredContent` against a tool's declared `outputSchema` only
+  // runs for a tool the client has loaded, so a listing after the calls
+  // validates nothing. `list_tags` answered a field its closed schema did not
+  // name, against a real Linkwarden, and this suite could not see it.
+  await Promise.all([asking.client.listTools(), plain.client.listTools()]);
 }, 900_000);
 
 afterAll(async () => {
