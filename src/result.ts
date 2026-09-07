@@ -158,12 +158,12 @@ function shrinkLongestField(
     const keep = Math.floor(value.length / 2);
     omitted[key] = (omitted[key] ?? 0) + (value.length - keep);
     record[key] = value.slice(0, keep);
-    const value_ = {
+    const candidate = {
       truncated: { reason, omitted_chars: { ...omitted }, follow_up: hint },
       ...record,
     };
-    if (JSON.stringify(value_, null, 2).length <= MAX_RESULT_BYTES) {
-      return value_;
+    if (JSON.stringify(candidate, null, 2).length <= MAX_RESULT_BYTES) {
+      return candidate;
     }
   }
 }

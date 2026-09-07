@@ -69,10 +69,10 @@ export function registerCollectionReadTools(
     },
     async ({ collection_id }) =>
       run(async () => {
-        const collection = (await api.get(
+        const rawCollection = (await api.get(
           idPath('/collections', collection_id)
         )) as RawCollection | null;
-        if (collection === null) {
+        if (rawCollection === null) {
           return untrustedResult({
             collection: null,
             notes: [
@@ -81,7 +81,7 @@ export function registerCollectionReadTools(
           });
         }
         return untrustedResult({
-          collection: shapeCollection(collection),
+          collection: shapeCollection(rawCollection),
           notes: [UNTRUSTED_METADATA_NOTE],
         });
       })

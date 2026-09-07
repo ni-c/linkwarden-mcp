@@ -72,30 +72,30 @@ function hostOf(
 }
 
 async function fetchLink(api: LinkwardenApi, id: number): Promise<RawLink> {
-  const link = (await api.get(idPath('/links', id))) as RawLink | null;
-  if (link === null || link.id === undefined) {
+  const rawLink = (await api.get(idPath('/links', id))) as RawLink | null;
+  if (rawLink === null || rawLink.id === undefined) {
     throw new Error(`link ${id} does not exist or is not accessible`);
   }
-  return link;
+  return rawLink;
 }
 
-function baseUpdateBody(link: RawLink): LinkUpdateBody {
-  const collection = link.collection;
+function baseUpdateBody(rawLink: RawLink): LinkUpdateBody {
+  const collection = rawLink.collection;
   if (collection?.id === undefined || collection.ownerId === undefined) {
     throw new Error(
-      `link ${String(link.id)} came back without its collection — cannot build a safe update`
+      `link ${String(rawLink.id)} came back without its collection — cannot build a safe update`
     );
   }
   return {
-    id: link.id as number,
-    name: link.name ?? '',
-    url: link.url ?? null,
-    description: link.description ?? '',
-    icon: link.icon ?? null,
-    iconWeight: link.iconWeight ?? null,
-    color: link.color ?? null,
+    id: rawLink.id as number,
+    name: rawLink.name ?? '',
+    url: rawLink.url ?? null,
+    description: rawLink.description ?? '',
+    icon: rawLink.icon ?? null,
+    iconWeight: rawLink.iconWeight ?? null,
+    color: rawLink.color ?? null,
     collection: { id: collection.id, ownerId: collection.ownerId },
-    tags: (link.tags ?? [])
+    tags: (rawLink.tags ?? [])
       .map((tag) => tag.name)
       .filter((name): name is string => typeof name === 'string')
       .map((name) => ({ name })),
@@ -268,8 +268,8 @@ export function registerLinkWriteTools(
       mcp
     ) =>
       run(async () => {
-        const link = await fetchLink(api, link_id);
-        const body = baseUpdateBody(link);
+        const rawLink = await fetchLink(api, link_id);
+        const body = baseUpdateBody(rawLink);
 
         // Before the confirmation, not after it: a URL that will be refused must
         // not first be confirmed. Both sides are compared in parsed form, so
@@ -293,10 +293,10 @@ export function registerLinkWriteTools(
             tags: tags ?? null,
           })}`;
           const existing = Object.entries({
-            screenshot: link.image,
-            pdf: link.pdf,
-            readable: link.readable,
-            monolith: link.monolith,
+            screenshot: rawLink.image,
+            pdf: rawLink.pdf,
+            readable: rawLink.readable,
+            monolith: rawLink.monolith,
           })
             .filter(
               ([, path]) =>
@@ -383,8 +383,8 @@ export function registerLinkWriteTools(
         if (me.id === undefined) {
           throw new Error('could not determine the authenticated account id');
         }
-        const link = await fetchLink(api, link_id);
-        const body = baseUpdateBody(link);
+        const rawLink = await fetchLink(api, link_id);
+        const body = baseUpdateBody(rawLink);
         // Pinning connects the account; anything that is not the account's own id
         // disconnects it. An empty object is the least surprising "not me".
         body.pinnedBy = pinned ? [{ id: me.id }] : [{}];
@@ -426,14 +426,14 @@ export function registerLinkWriteTools(
         const resource = setResourceKey('delete_link', [String(link_id)]);
         // Fetching first also makes the tool fail early on an id the account
         // cannot see, instead of after the confirmation round trip.
-        const link = await fetchLink(api, link_id);
+        const rawLink = await fetchLink(api, link_id);
         const outcome = await approval.requestApproval(
           server,
           mcp,
           confirmations,
           {
             what: `permanently delete link ${link_id} from collection ${String(
-              link.collection?.id ?? link.collectionId
+              rawLink.collection?.id ?? rawLink.collectionId
             )}, including its preserved copies`,
             consequence: 'Nothing about the link can be restored from here.',
             resourceKey: resource,
@@ -516,7 +516,7 @@ export function registerLinkWriteTools(
         // "add one tag" cannot be replayed as "replace all tags with nothing".
         const resource = setResourceKey(
           `bulk_update_links:${fingerprint({
-            tags: [...tags].sort(),
+            tags: tags.toSorted(),
             replace_tags,
             collection_id: collection_id ?? null,
           })}`,
@@ -673,7 +673,7 @@ export function registerLinkWriteTools(
         const resource = setResourceKey('represerve_link', [String(link_id)]);
         // Fetching first also fails early on an id the account cannot see,
         // instead of after the confirmation round trip.
-        const link = await fetchLink(api, link_id);
+        const rawLink = await fetchLink(api, link_id);
         const outcome = await approval.requestApproval(
           server,
           mcp,
@@ -697,7 +697,7 @@ export function registerLinkWriteTools(
             // true here: the host is not page prose, carries no instruction,
             // and is the one part of the address the answer turns on. It is
             // also the value the SSRF guard reasons about.
-            details: hostOf(link.url),
+            details: hostOf(rawLink.url),
           }
         );
         // A token that was sent and did not match is refused with the reason

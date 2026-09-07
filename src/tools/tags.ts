@@ -70,11 +70,11 @@ export function registerTagReadTools(
         )) as { tags?: RawTag[]; nextCursor?: number | null };
 
         const tags = (payload.tags ?? []).slice(0, MAX_TAGS);
-        const notes = new Notes();
-        notes.add(UNTRUSTED_METADATA_NOTE);
+        const resultNotes = new Notes();
+        resultNotes.add(UNTRUSTED_METADATA_NOTE);
         const nextCursor = payload.nextCursor ?? null;
         if (nextCursor !== null) {
-          notes.add(
+          resultNotes.add(
             `More tags exist: call list_tags again with the same arguments and cursor=${nextCursor}.`
           );
         }
@@ -83,7 +83,7 @@ export function registerTagReadTools(
           count: tags.length,
           next_cursor: nextCursor,
           tags: tags.map(shapeTag),
-          notes: notes.list(),
+          notes: resultNotes.list(),
         });
       })
   );
@@ -105,15 +105,17 @@ export function registerTagReadTools(
     },
     async ({ tag_id }) =>
       run(async () => {
-        const tag = (await api.get(idPath('/tags', tag_id))) as RawTag | null;
-        if (tag === null) {
+        const rawTag = (await api.get(
+          idPath('/tags', tag_id)
+        )) as RawTag | null;
+        if (rawTag === null) {
           return untrustedResult({
             tag: null,
             notes: [`No tag with id ${tag_id} is visible to this account.`],
           });
         }
         return untrustedResult({
-          tag: shapeTag(tag),
+          tag: shapeTag(rawTag),
           notes: [UNTRUSTED_METADATA_NOTE],
         });
       })

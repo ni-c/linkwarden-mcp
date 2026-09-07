@@ -108,14 +108,18 @@ describe('tool surface', () => {
 
   it('registers exactly the expected tools', async () => {
     const client = await connect();
-    const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual([...READ_TOOLS, ...WRITE_TOOLS].sort());
+    const names = (await client.listTools()).tools
+      .map((t) => t.name)
+      .toSorted();
+    expect(names).toEqual([...READ_TOOLS, ...WRITE_TOOLS].toSorted());
   });
 
   it('registers only the read tools in read-only mode', async () => {
     const client = await connect({ readOnly: true });
-    const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual([...READ_TOOLS].sort());
+    const names = (await client.listTools()).tools
+      .map((t) => t.name)
+      .toSorted();
+    expect(names).toEqual(READ_TOOLS.toSorted());
     for (const write of WRITE_TOOLS) {
       expect(names).not.toContain(write);
     }
@@ -188,7 +192,7 @@ describe('tool surface', () => {
         return properties?.untrusted !== undefined;
       })
       .map((tool) => tool.name)
-      .sort();
+      .toSorted();
     // The read tools. Everything else reports an id this server was given and
     // a count it made, or a record it just wrote.
     expect(marked).toEqual([
@@ -257,8 +261,8 @@ describe('tool surface', () => {
     const withUrl = tools
       .filter((tool) => 'url' in (tool.inputSchema.properties ?? {}))
       .map((tool) => tool.name)
-      .sort();
-    expect(withUrl).toEqual([...openWorld].sort());
+      .toSorted();
+    expect(withUrl).toEqual([...openWorld].toSorted());
   });
 
   it('gives every tool a description that names its own tool', async () => {

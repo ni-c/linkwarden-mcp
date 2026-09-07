@@ -158,16 +158,16 @@ export function registerLinkReadTools(
           : (payload as { links?: RawLink[]; nextCursor?: number | null });
 
         const links = (result.links ?? []).slice(0, MAX_LINKS);
-        const notes = new Notes();
-        notes.add(UNTRUSTED_METADATA_NOTE);
+        const resultNotes = new Notes();
+        resultNotes.add(UNTRUSTED_METADATA_NOTE);
         if ((result.links ?? []).length > MAX_LINKS) {
-          notes.add(
+          resultNotes.add(
             `The instance returned more than ${MAX_LINKS} links; only the first ${MAX_LINKS} are shown. Narrow the query.`
           );
         }
         const nextCursor = empty ? null : (result.nextCursor ?? null);
         if (nextCursor !== null) {
-          notes.add(
+          resultNotes.add(
             `More links exist: call search_links again with the same arguments and cursor=${nextCursor}.`
           );
         }
@@ -177,7 +177,7 @@ export function registerLinkReadTools(
         // the API whether Meilisearch is active, so say it whenever it could apply
         // rather than let an empty result read as "no such links".
         if (query !== undefined && FIELD_FILTER_RE.test(query)) {
-          notes.add(
+          resultNotes.add(
             links.length === 0
               ? 'The query uses field filters (field:value) and found nothing. Those only work ' +
                   'on instances running Meilisearch; otherwise the whole query is matched as a ' +
@@ -194,7 +194,7 @@ export function registerLinkReadTools(
             count: links.length,
             next_cursor: nextCursor,
             links: links.map(shapeLink),
-            notes: notes.list(),
+            notes: resultNotes.list(),
           },
           nextCursor === undefined
             ? 'Narrow the query with collection_id, tag_id or pinned_only.'
@@ -221,9 +221,9 @@ export function registerLinkReadTools(
     },
     async ({ link_id }) =>
       run(async () => {
-        const link = (await api.get(idPath('/links', link_id))) as RawLink;
+        const rawLink = (await api.get(idPath('/links', link_id))) as RawLink;
         return untrustedResult({
-          link: shapeLink(link),
+          link: shapeLink(rawLink),
           notes: [UNTRUSTED_METADATA_NOTE],
         });
       })
@@ -306,8 +306,8 @@ export function registerLinkReadTools(
       run(async () => {
         // Check the link first: it says whether a readable archive exists at all,
         // which turns the common failure into an explanation instead of a 404.
-        const link = (await api.get(idPath('/links', link_id))) as RawLink;
-        const available = preservedFormats(link);
+        const rawLink = (await api.get(idPath('/links', link_id))) as RawLink;
+        const available = preservedFormats(rawLink);
         if (!available.readable) {
           const others = Object.entries(available)
             .filter(([, exists]) => exists)
@@ -369,14 +369,14 @@ export function registerLinkReadTools(
         const slice = text.slice(start, start + limit);
         const end = start + slice.length;
 
-        const notes = new Notes();
+        const resultNotes = new Notes();
         if (end < text.length) {
-          notes.add(
+          resultNotes.add(
             `Truncated: ${end} of ${text.length} characters returned. Call get_link_content again with link_id=${link_id} and offset=${end} for the next slice.`
           );
         }
         if (start >= text.length && text.length > 0) {
-          notes.add(
+          resultNotes.add(
             `The offset is past the end of the article (${text.length} characters).`
           );
         }
@@ -409,7 +409,7 @@ export function registerLinkReadTools(
             offset: start,
             returned_chars: slice.length,
             text: slice,
-            notes: notes.list(),
+            notes: resultNotes.list(),
           },
           `call get_link_content with link_id=${link_id}, offset=${end} and a smaller max_chars`
         );
