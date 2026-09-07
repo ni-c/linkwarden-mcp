@@ -108,14 +108,18 @@ describe('tool surface', () => {
 
   it('registers exactly the expected tools', async () => {
     const client = await connect();
-    const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual([...READ_TOOLS, ...WRITE_TOOLS].sort());
+    const names = (await client.listTools()).tools
+      .map((t) => t.name)
+      .toSorted();
+    expect(names).toEqual([...READ_TOOLS, ...WRITE_TOOLS].toSorted());
   });
 
   it('registers only the read tools in read-only mode', async () => {
     const client = await connect({ readOnly: true });
-    const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual([...READ_TOOLS].sort());
+    const names = (await client.listTools()).tools
+      .map((t) => t.name)
+      .toSorted();
+    expect(names).toEqual(READ_TOOLS.toSorted());
     for (const write of WRITE_TOOLS) {
       expect(names).not.toContain(write);
     }
@@ -163,6 +167,22 @@ describe('tool surface', () => {
     }
   });
 
+  it('declares every field a paging tool answers with', async () => {
+    // `z.object` emits `additionalProperties: false`, and a client that has
+    // loaded `tools/list` checks the result against it. `list_tags` answered
+    // `next_cursor` on every call and did not declare it, so every successful
+    // call was refused with "Structured content does not match the tool's
+    // output schema" — for every real client, and for no test, because none of
+    // them listed first.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    for (const name of ['search_links', 'list_tags']) {
+      const properties = tools.find((tool) => tool.name === name)?.outputSchema
+        ?.properties as Record<string, unknown> | undefined;
+      expect(Object.keys(properties ?? {}), name).toContain('next_cursor');
+    }
+  });
+
   it('advertises schemas every client can read', async () => {
     // Legal JSON Schema is not enough. `{}` in a schema position — what zod
     // writes for `looseObject`, `catchall` and `z.unknown()` — and `type` as an
@@ -188,7 +208,7 @@ describe('tool surface', () => {
         return properties?.untrusted !== undefined;
       })
       .map((tool) => tool.name)
-      .sort();
+      .toSorted();
     // The read tools. Everything else reports an id this server was given and
     // a count it made, or a record it just wrote.
     expect(marked).toEqual([
@@ -257,8 +277,8 @@ describe('tool surface', () => {
     const withUrl = tools
       .filter((tool) => 'url' in (tool.inputSchema.properties ?? {}))
       .map((tool) => tool.name)
-      .sort();
-    expect(withUrl).toEqual([...openWorld].sort());
+      .toSorted();
+    expect(withUrl).toEqual([...openWorld].toSorted());
   });
 
   it('gives every tool a description that names its own tool', async () => {

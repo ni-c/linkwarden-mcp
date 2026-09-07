@@ -9,6 +9,7 @@ import {
   missingConfigMessage,
   type Config,
 } from './config.js';
+import { assertHeaderValue, redactSecret } from './text.js';
 
 /**
  * 30 s rather than the usual 15 s: search goes through Meilisearch and the
@@ -31,6 +32,19 @@ const API_PREFIX = '/api/v1';
  * archive of a long article is a few hundred kB.
  */
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Ceiling on the body of a response that already failed.
+ *
+ * Separate from {@link MAX_RESPONSE_BYTES}, and it cuts instead of throwing.
+ * Reading every body under the success cap and only then looking at the status
+ * meant that a reverse proxy answering `401` with a login page over 8 MB
+ * surfaced as "Linkwarden returned more than the 8388608 byte limit" — the
+ * size, not the status; no credential hint; and a plain `Error` rather than a
+ * {@link LinkwardenApiError}, so the `instanceof` in `run()` did not match
+ * either.
+ */
+const MAX_ERROR_BYTES = 64 * 1024;
 
 /**
  * Reads a response body, refusing anything past {@link MAX_RESPONSE_BYTES}.
@@ -82,6 +96,35 @@ async function readCappedText(response: {
     text += decoder.decode(chunk, { stream: true });
   }
   return text + decoder.decode();
+}
+
+/**
+ * Reads the body of a failed response, cutting rather than refusing.
+ *
+ * The status is the answer here; the body is only context for it, so running
+ * out of room must not be able to replace a 401 with a size complaint.
+ */
+async function readErrorText(response: {
+  body: unknown;
+  text(): Promise<string>;
+}): Promise<string> {
+  const body = response.body as AsyncIterable<Uint8Array> | null | undefined;
+  if (
+    !body ||
+    typeof (body as AsyncIterable<Uint8Array>)[Symbol.asyncIterator] !==
+      'function'
+  ) {
+    return (await response.text()).slice(0, MAX_ERROR_BYTES);
+  }
+  const decoder = new TextDecoder();
+  let text = '';
+  for await (const chunk of body) {
+    text += decoder.decode(chunk, { stream: true });
+    if (text.length >= MAX_ERROR_BYTES) {
+      return text.slice(0, MAX_ERROR_BYTES);
+    }
+  }
+  return (text + decoder.decode()).slice(0, MAX_ERROR_BYTES);
 }
 
 export class LinkwardenApiError extends Error {
@@ -141,8 +184,16 @@ export class LinkwardenApi {
       throw new Error(missingConfigMessage(missing));
     }
 
+    const authorization = `Bearer ${this.config.token ?? ''}`;
+    // Before `fetch` sees it, because `fetch` quotes what it refuses:
+    // `Headers.append: "Bearer eyJhbGciOi\n…" is an invalid header value.` —
+    // the whole token, into `run()`'s generic catch and from there into the
+    // model context. `loadConfig` checks the same shape at startup; this check
+    // is here as well because a `Config` can be built without it, which is
+    // exactly what the tests do.
+    assertHeaderValue('Authorization', authorization);
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.config.token ?? ''}`,
+      Authorization: authorization,
       Accept: 'application/json',
     };
     const init: RequestInit = {
@@ -163,18 +214,38 @@ export class LinkwardenApi {
     const url = `${this.baseUrl}${API_PREFIX}${path}`;
     // The insecure dispatcher requires undici's own fetch; the default path uses
     // the (stubbable) global fetch so tests can intercept it.
-    const response = this.insecureDispatcher
-      ? await undiciFetch(url, {
-          ...init,
-          dispatcher: this.insecureDispatcher,
-        } as UndiciRequestInit)
-      : await fetch(url, init);
-    const text = await readCappedText(response);
-
-    if (!response.ok) {
-      throw new LinkwardenApiError(response.status, text, method, path);
+    let response;
+    try {
+      response = this.insecureDispatcher
+        ? await undiciFetch(url, {
+            ...init,
+            dispatcher: this.insecureDispatcher,
+          } as UndiciRequestInit)
+        : await fetch(url, init);
+    } catch (error) {
+      // The transport's own words, and it has the token in scope. Whatever it
+      // chose to quote, the credential is taken out of it here — the one place
+      // that knows what the credential is.
+      throw new Error(
+        redactSecret(
+          error instanceof Error ? error.message : String(error),
+          this.config.token
+        ),
+        // The cause is kept for a stack trace and never reaches a result:
+        // `run()` reads `error.message`, which is the redacted one above.
+        { cause: error }
+      );
     }
 
+    // The status decides, and it decides first: a body read under the success
+    // ceiling used to be able to fail with a size complaint that carried
+    // neither the status nor the credential hint.
+    if (!response.ok) {
+      const errorBody = await readErrorText(response);
+      throw new LinkwardenApiError(response.status, errorBody, method, path);
+    }
+
+    const text = await readCappedText(response);
     return { contentType: response.headers.get('content-type') ?? '', text };
   }
 

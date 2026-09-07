@@ -12,7 +12,8 @@ import {
 
 import type { LinkwardenApi } from '../api.js';
 import { confirmToken, idPath, tagId } from '../schema.js';
-import { shapeTag, type RawTag } from '../shape.js';
+import { shapeTag } from '../shape.js';
+import { readTag, readTags, recordOf, skippedNote } from '../boundary.js';
 
 const MAX_TAGS_PER_CALL = 50;
 
@@ -113,8 +114,13 @@ export function registerTagWriteTools(
           tags: [...new Set(names)].map((label) => ({ label, ...settings })),
         });
         assertNotErrorMessage(result, 'Creating the tags');
-        const tags = Array.isArray(result) ? (result as RawTag[]) : [];
-        return jsonResult({ tags: tags.map(shapeTag) });
+        const read = readTags(result);
+        return jsonResult({
+          tags: read.items.map(shapeTag),
+          ...(skippedNote(read.skipped, 'tag') !== undefined
+            ? { notes: [skippedNote(read.skipped, 'tag')] }
+            : {}),
+        });
       })
   );
 
@@ -191,7 +197,11 @@ export function registerTagWriteTools(
 
         const updated = await api.put(idPath('/tags', tag_id), { name });
         assertNotErrorMessage(updated, 'Renaming the tag');
-        return jsonResult({ updated: shapeTag(updated as RawTag) });
+        return jsonResult({
+          updated: shapeTag(
+            readTag(recordOf(updated, 'the renamed tag')) ?? {}
+          ),
+        });
       })
   );
 
@@ -347,7 +357,7 @@ export function registerTagWriteTools(
         assertNotErrorMessage(result, 'Merging the tags');
         return jsonResult({
           merged_tag_ids: ids,
-          new_tag: shapeTag(result as RawTag),
+          new_tag: shapeTag(readTag(recordOf(result, 'the new tag')) ?? {}),
         });
       })
   );

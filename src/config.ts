@@ -1,5 +1,11 @@
 import { internalHostKind } from 'mcp-internal-hosts';
 
+import {
+  describeValue,
+  firstNonPrintable,
+  quotedIfWordShaped,
+} from './text.js';
+
 export interface Config {
   /**
    * Base URL of the Linkwarden instance, e.g. `https://links.example.net`.
@@ -69,8 +75,12 @@ export function parseElicitation(raw: string | undefined): boolean {
   const value = raw?.trim().toLowerCase();
   if (value === undefined || value === '' || value === 'true') return true;
   if (value === 'false') return false;
+  // The value is quoted only when it is short and word-shaped — a typo is a
+  // word. `ELICITATION` is unprefixed and sits in the same block as the token
+  // in every compose file, and a message whose whole purpose is to show the
+  // operator what they typed must not print what they pasted.
   console.error(
-    `linkwarden-mcp: ELICITATION must be "true" or "false" — got "${raw}". ` +
+    `linkwarden-mcp: ELICITATION must be "true" or "false" — got ${quotedIfWordShaped(raw ?? '')}. ` +
       'Refusing to start rather than guess.'
   );
   process.exit(1);
@@ -86,7 +96,9 @@ export function parseElicitation(raw: string | undefined): boolean {
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const url = env.LINKWARDEN_URL;
-  const token = env.LINKWARDEN_TOKEN;
+  // Trimmed before anything looks at it: `$(cat token)` leaves a newline, and
+  // a trailing newline is a shape the HTTP layer would refuse.
+  const token = env.LINKWARDEN_TOKEN?.trim();
   const insecureTls = env.LINKWARDEN_INSECURE_TLS === 'true';
   // Deliberately more forgiving than `LINKWARDEN_INSECURE_TLS` above, and the
   // asymmetry is the safety argument rather than an oversight: a misspelt value
@@ -118,6 +130,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   if (missing.length > 0) {
     console.error(`linkwarden-mcp: ${missingConfigMessage(missing)}`);
+  }
+
+  // A token that carries a character HTTP does not allow in a header value —
+  // a line break inside it, which is what a wrapped copy out of a browser looks
+  // like — would reach `fetch`, and `fetch` quotes the whole value when it
+  // refuses it. Refusing to start says the same thing without the value: the
+  // variable, the length, and where the offending character sits.
+  if (token !== undefined && token !== '') {
+    const at = firstNonPrintable(token);
+    if (at !== -1) {
+      console.error(
+        `linkwarden-mcp: LINKWARDEN_TOKEN contains a character that cannot be sent in an ` +
+          `HTTP header, at position ${at} of ${token.length}. ` +
+          'Re-copy the token from Settings → Access Tokens; it is one unbroken line.'
+      );
+      process.exit(1);
+    }
   }
 
   // Linkwarden access tokens are NextAuth JWTs, so they always start with the
@@ -157,8 +186,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     process.exit(1);
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    // The scheme is not echoed: a 56-character hexadecimal key with a colon
+    // after it *is* a valid URL whose protocol is the key, so this branch is
+    // one of the two a pasted secret lands in.
     console.error(
-      `linkwarden-mcp: LINKWARDEN_URL must use http:// or https:// (got ${parsed.protocol})`
+      `linkwarden-mcp: LINKWARDEN_URL must use http:// or https:// — the value that was set uses a different scheme (${describeValue(url)})`
     );
     process.exit(1);
   }
@@ -176,9 +208,29 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     );
   }
 
+  // Stored as the parsed URL, never as the environment string. A query or a
+  // fragment left on the value used to be glued in front of every path —
+  // `https://links.example.net/?debug=1` became
+  // `https://links.example.net/?debug=1/api/v1/links/1`, and every call failed
+  // in a way that named nothing. And the trailing slashes are counted off
+  // rather than matched with `/\/+$/`, which is quadratic when the run is not
+  // at the end: 80 000 of them cost 2.2 seconds.
+  const dropped = [
+    parsed.search !== '' && 'a query string',
+    parsed.hash !== '' && 'a fragment',
+  ].filter((what): what is string => Boolean(what));
+  if (dropped.length > 0) {
+    console.error(
+      `linkwarden-mcp: WARNING: LINKWARDEN_URL carries ${dropped.join(' and ')}, which ${
+        dropped.length > 1 ? 'were' : 'was'
+      } dropped — only the origin and path are used.`
+    );
+  }
   // Tolerate a URL that already carries the API prefix: `redirect: 'error'` would
   // otherwise turn the resulting 308 into an opaque failure.
-  const normalized = url.replace(/\/+$/, '').replace(/\/api\/v1$/, '');
+  const normalized = stripApiPrefix(
+    parsed.origin + trimTrailingSlashes(parsed.pathname)
+  );
 
   return {
     url: normalized,
@@ -189,6 +241,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     allowTools,
     denyTools,
   };
+}
+
+/**
+ * Trailing slashes, counted off with an index.
+ *
+ * `replace(/\/+$/, '')` is the obvious spelling and is quadratic: the pattern
+ * is tried from every position of the run and consumes it each time whenever a
+ * character follows the run somewhere. And `while (s.endsWith('/')) s =
+ * s.slice(0, -1)` is the same cost in bytes, one copy per slash. One walk, one
+ * slice.
+ */
+function trimTrailingSlashes(path: string): string {
+  let end = path.length;
+  while (end > 0 && path.charCodeAt(end - 1) === 0x2f) end--;
+  return path.slice(0, end);
+}
+
+/** Drops a `/api/v1` the operator already put on the URL. */
+function stripApiPrefix(url: string): string {
+  return url.endsWith('/api/v1') ? url.slice(0, -'/api/v1'.length) : url;
 }
 
 function isLoopbackHost(hostname: string): boolean {

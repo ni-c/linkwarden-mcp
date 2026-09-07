@@ -138,6 +138,13 @@ export async function connect(
     client.connect(clientTransport),
     server.connect(serverTransport),
   ]);
+  // Listed once per connection, deliberately: the SDK's client-side check of
+  // `structuredContent` against the declared `outputSchema` only runs for a
+  // tool the client has loaded. Without this line 400 green tests had never
+  // exercised that check on a single success path — and `list_tags`, which
+  // answers `next_cursor` under a closed schema, had been refusing every
+  // successful call for every real client since the schemas were added.
+  await client.listTools();
   return Object.assign(client, { prompts });
 }
 

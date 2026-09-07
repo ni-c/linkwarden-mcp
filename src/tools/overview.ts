@@ -1,11 +1,17 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import {
+  Notes,
   shapeLink,
   shapeRssSubscription,
   UNTRUSTED_METADATA_NOTE,
-  type RawLink,
-  type RawRssSubscription,
 } from '../shape.js';
+import {
+  readLinks,
+  readRssSubscriptions,
+  readUser,
+  readWorkerStats,
+  skippedNote,
+} from '../boundary.js';
 import { z } from 'zod';
 import {
   link,
@@ -19,27 +25,6 @@ import {
 import type { LinkwardenApi } from '../api.js';
 import { READ_ONLY } from './annotations.js';
 import { run, untrustedResult } from '../result.js';
-
-interface RawUser {
-  id?: number;
-  username?: string | null;
-  name?: string | null;
-  isPrivate?: boolean;
-  archiveAsScreenshot?: boolean;
-  archiveAsMonolith?: boolean;
-  archiveAsPDF?: boolean;
-  archiveAsReadable?: boolean;
-  archiveAsWaybackMachine?: boolean;
-  aiTaggingMethod?: string;
-  aiPredefinedTags?: string[];
-  preventDuplicateLinks?: boolean;
-  hasUnIndexedLinks?: boolean;
-}
-
-interface RawWorkerStats {
-  link?: { pending?: number; done?: number; failed?: number };
-  search?: { pending?: number; done?: number };
-}
 
 export function registerOverviewReadTools(
   server: McpServer,
@@ -72,7 +57,7 @@ export function registerOverviewReadTools(
     },
     async () =>
       run(async () => {
-        const user = (await api.get('/users/me')) as RawUser;
+        const user = readUser(await api.get('/users/me'));
         return untrustedResult({
           id: user.id,
           username: user.username ?? null,
@@ -115,12 +100,14 @@ export function registerOverviewReadTools(
     async () =>
       run(async () => {
         // This route answers with a flat array of links, not with an object.
-        const links = (await api.get('/dashboard')) as RawLink[];
-        const list = Array.isArray(links) ? links : [];
+        const read = readLinks(await api.get('/dashboard'));
+        const resultNotes = new Notes();
+        resultNotes.add(UNTRUSTED_METADATA_NOTE);
+        resultNotes.add(skippedNote(read.skipped, 'link'));
         return untrustedResult({
-          count: list.length,
-          links: list.map(shapeLink),
-          notes: [UNTRUSTED_METADATA_NOTE],
+          count: read.items.length,
+          links: read.items.map(shapeLink),
+          notes: resultNotes.list(),
         });
       })
   );
@@ -144,11 +131,14 @@ export function registerOverviewReadTools(
     },
     async () =>
       run(async () => {
-        const subscriptions = (await api.get('/rss')) as RawRssSubscription[];
+        const read = readRssSubscriptions(await api.get('/rss'));
+        const resultNotes = new Notes();
+        resultNotes.add(UNTRUSTED_METADATA_NOTE);
+        resultNotes.add(skippedNote(read.skipped, 'subscription'));
         return untrustedResult({
-          count: subscriptions.length,
-          subscriptions: subscriptions.map(shapeRssSubscription),
-          notes: [UNTRUSTED_METADATA_NOTE],
+          count: read.items.length,
+          subscriptions: read.items.map(shapeRssSubscription),
+          notes: resultNotes.list(),
         });
       })
   );
@@ -187,16 +177,16 @@ export function registerOverviewReadTools(
     },
     async () =>
       run(async () => {
-        const stats = (await api.get('/worker')) as RawWorkerStats;
+        const stats = readWorkerStats(await api.get('/worker'));
         return untrustedResult({
           links: {
-            pending: stats.link?.pending ?? 0,
-            preserved: stats.link?.done ?? 0,
-            failed: stats.link?.failed ?? 0,
+            pending: stats.link.pending,
+            preserved: stats.link.done,
+            failed: stats.link.failed,
           },
           search_index: {
-            pending: stats.search?.pending ?? 0,
-            indexed: stats.search?.done ?? 0,
+            pending: stats.search.pending,
+            indexed: stats.search.done,
           },
         });
       })

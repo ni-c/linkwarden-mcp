@@ -44,8 +44,22 @@ implying somebody approved. `ELICITATION=false` moves a capable client onto it
 deliberately — it does not remove the guard, and the server prints one line at startup
 saying it is off.
 
-Data returned from the upstream API is untrusted input: it is marked as such, and
-confirmation prompts never quote it.
+Data returned from the upstream API is untrusted input. Every string it carries is read
+through one boundary, where control characters are removed and lone surrogates repaired,
+before anything is projected or quoted — an error body, a 200 that carries an error
+sentence, and the preserved article text included. Results carry an explicit `untrusted`
+marker. Confirmation prompts quote no text from the instance at all: what they name is a
+numeric id, a count, and — for `represerve_link`, which fetches an address this server
+may never have seen — the host, and nothing else of the URL.
+
+The `LINKWARDEN_TOKEN` is never printed, logged or included in an error message. Two
+things hold that up rather than one: the value is checked at startup for a character
+HTTP cannot carry in a header (a line break inside a wrapped paste is the usual one) and
+refused without being echoed, and every header value is checked again before `fetch` sees
+it — because the runtime's own refusal, `Headers.append: "<value>" is an invalid header
+value.`, quotes the whole value, and for `Authorization` the value is the token. Whatever
+a library still chooses to quote, the configured token is removed from it before the
+message can become a tool result.
 
 ## Bookmarking a URL is a server-side fetch
 
@@ -115,20 +129,28 @@ that out of its reach there rather than relying on this check.
 
 Both confirmation paths bind an answer to **one operation with one set of arguments**:
 the two-call `confirm_token` through a one-use entry in the store, the elicitation reply
-through a sealed (HMAC) `requestState` carrying the resource key. Neither proves the
-answer is _recent_. A sealed state that opens onto an operation opens onto it whenever
-it is replayed.
+through a sealed (HMAC) `requestState` carrying the resource key.
 
-No replay defence is built, because in this deployment shape there is nothing to replay:
+A seal proves binding — "this answer belongs to this question" — and by itself says
+nothing about _when_ the answer was given. On protocol revision `2026-07-28` the dialog
+is a return value: the sealed state travels out through the client and comes back with
+the reply, so the same state and the same ticked box could be presented again for as
+long as the state lived. This server negotiates that revision: `src/index.ts` serves
+through `serveStdio`, which selects `2025-11-25` or `2026-07-28` in the opening exchange.
+An earlier version of this page argued the path was unreachable, from a default version
+list a hand-wired transport would have used. That was true of a transport this server no
+longer uses.
 
-- The sealing key is 32 random bytes per process, and this is a stdio server spawned per
-  session, so a state sealed in one session cannot be opened in the next.
-- `requestState` only crosses the wire on protocol revision `2026-07-28`. This server
-  does not set `supportedProtocolVersions`, so it takes the SDK's default list, which
-  ends at `2025-11-25`; on that revision the SDK bridges the elicitation server-side and
-  the value never leaves the process.
-- The `confirm_token` path is single-use and expires after five minutes.
+What closes it is `mcp-approval` ≥ 0.8.1: the sealed state carries a nonce, and the first
+answer spends it — accepted or declined alike. A replayed state opens onto nothing.
 
-If any of those changes — a negotiated `2026-07-28`, or two processes serving the two
-halves of one flow with a shared key — a nonce becomes necessary. The approvals worth
-stealing here are `delete_link`, `bulk_delete_links` and `delete_collection`.
+Two residual limits, stated rather than implied:
+
+- The record of spent states is per process. A restart forgets it, and a state sealed
+  before the restart cannot be opened after it either, because the sealing key is 32
+  random bytes per process.
+- The `confirm_token` path is single-use and expires after five minutes. It proves the
+  call was made twice with the same arguments and nothing more, which its own text says.
+
+The approvals worth stealing here are `delete_link`, `bulk_delete_links` and
+`delete_collection`.

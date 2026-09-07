@@ -36,8 +36,16 @@ RUN apk add --no-cache --upgrade libcrypto3 libssl3
 # (CVE-2026-59873, CVE-2026-59874). Deleting them fixes the scan rather than
 # suppressing it. Dependencies are installed in the build stage, which keeps its
 # npm.
+#
+# yarn is the third thing the base image ships and was left behind by this line
+# for four releases: it lives in /opt/yarn-v* with two shims in /usr/local/bin,
+# and it is a second npm-shaped dependency tree in an image whose entrypoint is
+# plain `node`. Verify after every build:
+#   docker run --rm --entrypoint sh <image> -c \
+#     'ls /opt /usr/local/lib/node_modules; which yarn npm npx corepack'
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
-    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    /opt/yarn-v* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist

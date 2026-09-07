@@ -1,9 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/server';
+import { Notes, shapeCollection, UNTRUSTED_METADATA_NOTE } from '../shape.js';
 import {
-  shapeCollection,
-  UNTRUSTED_METADATA_NOTE,
-  type RawCollection,
-} from '../shape.js';
+  readCollection,
+  readCollections,
+  recordOf,
+  skippedNote,
+} from '../boundary.js';
 import { z } from 'zod';
 import {
   collection,
@@ -42,11 +44,14 @@ export function registerCollectionReadTools(
     },
     async () =>
       run(async () => {
-        const collections = (await api.get('/collections')) as RawCollection[];
+        const read = readCollections(await api.get('/collections'));
+        const resultNotes = new Notes();
+        resultNotes.add(UNTRUSTED_METADATA_NOTE);
+        resultNotes.add(skippedNote(read.skipped, 'collection'));
         return untrustedResult({
-          count: collections.length,
-          collections: collections.map(shapeCollection),
-          notes: [UNTRUSTED_METADATA_NOTE],
+          count: read.items.length,
+          collections: read.items.map(shapeCollection),
+          notes: resultNotes.list(),
         });
       })
   );
@@ -69,10 +74,8 @@ export function registerCollectionReadTools(
     },
     async ({ collection_id }) =>
       run(async () => {
-        const collection = (await api.get(
-          idPath('/collections', collection_id)
-        )) as RawCollection | null;
-        if (collection === null) {
+        const payload = await api.get(idPath('/collections', collection_id));
+        if (payload === null) {
           return untrustedResult({
             collection: null,
             notes: [
@@ -80,8 +83,11 @@ export function registerCollectionReadTools(
             ],
           });
         }
+        const rawCollection =
+          readCollection(recordOf(payload, `collection ${collection_id}`)) ??
+          {};
         return untrustedResult({
-          collection: shapeCollection(collection),
+          collection: shapeCollection(rawCollection),
           notes: [UNTRUSTED_METADATA_NOTE],
         });
       })

@@ -163,6 +163,13 @@ answer** and produces a fresh question rather than an error. The likeliest cause
 is not an attack: it is a gateway that put the server to sleep while the person
 was reading.
 
+A seal binds an answer to its question and says nothing about when the answer
+was given, so the state also carries a **nonce**, spent by the first reply —
+accepted or declined alike. Presenting the same sealed state a second time asks
+the question again rather than acting on the old tick. The record of spent
+states is per process: a restart forgets it, and forgets the sealing key with
+it, so a state from before the restart opens onto nothing either way.
+
 If you run this behind [mcp-hub](https://github.com/ni-c/mcp-hub), the hub passes
 elicitation through in both directions; see its
 [elicitation guide](https://ni-c.github.io/mcp-hub/guide/elicitation).
