@@ -4,7 +4,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ni-c/linkwarden-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/linkwarden-mcp/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ni-c/linkwarden-mcp/badge)](https://scorecard.dev/viewer/?uri=github.com/ni-c/linkwarden-mcp)
-<a href="https://socket.dev/npm/package/linkwarden-mcp"><img src="https://socket.dev/api/badge/npm/package/linkwarden-mcp" alt="Socket supply-chain report" height="20"></a>
+[![Socket Badge](https://badge.socket.dev/npm/package/linkwarden-mcp)](https://socket.dev/npm/package/linkwarden-mcp)
 [![Glama score](https://glama.ai/mcp/servers/ni-c/linkwarden-mcp/badges/score.svg)](https://glama.ai/mcp/servers/ni-c/linkwarden-mcp)
 <br>
 [![npm version](https://img.shields.io/npm/v/linkwarden-mcp)](https://www.npmjs.com/package/linkwarden-mcp)
