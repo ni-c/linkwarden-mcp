@@ -177,3 +177,37 @@ describe('both channels of a result carry the same document', () => {
     });
   }
 });
+
+describe('an upstream __proto__ key', () => {
+  for (const tool of ['get_link', 'get_link_content']) {
+    it(`reaches neither channel of ${tool}`, async () => {
+      // The key goes in as text: an object literal would set a prototype, not
+      // a key, and JSON.stringify would never write it.
+      const linkBody =
+        '{"__proto__":{"polluted":true},' +
+        JSON.stringify(linkFixture()).slice(1);
+      stubFetch((url) =>
+        url.includes('/archives/')
+          ? new Response(
+              '{"__proto__":"x","title":"t","textContent":"hello","content":"<p>hello</p>"}',
+              { status: 200, headers: { 'content-type': 'application/json' } }
+            )
+          : new Response(`{"response":${linkBody}}`, {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            })
+      );
+      const client = await connect();
+      const result = (await client.callTool({
+        name: tool,
+        arguments: { link_id: 42 },
+      })) as CallToolResult;
+      expect(result.isError).toBeFalsy();
+      const text = resultText(result);
+      expect(text).not.toContain('__proto__');
+      expect(JSON.parse(text.slice(text.indexOf('{')))).toEqual(
+        JSON.parse(JSON.stringify(result.structuredContent))
+      );
+    });
+  }
+});
