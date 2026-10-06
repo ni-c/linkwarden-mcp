@@ -108,6 +108,40 @@ describe('ConfirmationStore', () => {
 });
 
 describe('result helpers', () => {
+  it('drops a __proto__ key at every depth and nothing else', () => {
+    const data = JSON.parse(
+      '{"__proto__":{"a":1},"ok":true,"nested":{"__proto__":"x","keep":1},' +
+        '"list":[{"__proto__":2,"n":3}],"nul":{"__proto__":null}}'
+    ) as Record<string, unknown>;
+    for (const result of [jsonResult(data), untrustedResult(data)]) {
+      const out = result.structuredContent as Record<string, unknown>;
+      expect(Object.hasOwn(out, '__proto__')).toBe(false);
+      expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+      expect(resultText(result)).not.toContain('__proto__');
+      const { untrusted: _u, source: _s, ...rest } = out;
+      expect(rest).toEqual({
+        ok: true,
+        nested: { keep: 1 },
+        list: [{ n: 3 }],
+        nul: {},
+      });
+      expect(
+        JSON.parse(resultText(result).slice(resultText(result).indexOf('{')))
+      ).toEqual(out);
+    }
+  });
+
+  it('drops a __proto__ key that sits in a payload that has to be shortened', () => {
+    const data = JSON.parse(
+      `{"__proto__":"x","text":"${'y'.repeat(500_000)}"}`
+    ) as Record<string, unknown>;
+    const result = jsonResult(data);
+    expect(resultText(result)).not.toContain('__proto__');
+    expect(Object.hasOwn(result.structuredContent as object, '__proto__')).toBe(
+      false
+    );
+  });
+
   it('shortens a long field rather than refusing the whole answer', () => {
     // A single long string is a candidate now. It used to be one only for
     // `untrustedResult`, and `jsonResult` threw here — two shorteners, each

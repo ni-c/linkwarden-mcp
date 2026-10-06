@@ -165,15 +165,23 @@ function write(
   });
 }
 
-/** A JSON-shaped deep copy whose objects carry only own properties. */
+/**
+ * A JSON-shaped deep copy whose objects carry only own properties, minus any
+ * key named `__proto__`. That key is legal JSON and `JSON.parse` makes it an
+ * own property, which `Object.fromEntries` and `JSON.stringify` both keep, so
+ * the text block would carry it. A client parses `structuredContent` against
+ * the output schema, and zod assigns fields — on that name that sets a
+ * prototype instead, so the field vanishes from that channel only and the two
+ * disagree. Every result goes through this walk (`budget` runs it first), so the
+ * key is dropped here, which also means {@link write} is never asked to write it.
+ */
 function copy<T>(value: T): T {
   if (Array.isArray(value)) return value.map(copy) as unknown as T;
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
-        key,
-        copy(entry),
-      ])
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => key !== '__proto__')
+        .map(([key, entry]) => [key, copy(entry)])
     ) as T;
   }
   return value;
@@ -267,10 +275,13 @@ function budget(
   // Wrapped when it is not already an object. A schema whose root is an array
   // or a scalar is served to a 2025-era client rewritten as `{result: …}`, so
   // the tool would answer in two shapes depending on who asked.
-  const record =
+  // Copied before anything else, so a `__proto__` key is gone from the answer
+  // whether or not it needs shortening (see {@link copy}).
+  const record = copy(
     data !== null && typeof data === 'object' && !Array.isArray(data)
       ? (data as Record<string, unknown>)
-      : { items: data };
+      : { items: data }
+  );
 
   return shorten(
     record,
