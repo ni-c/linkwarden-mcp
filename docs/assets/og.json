@@ -4,5 +4,5 @@
     "MCP server for Linkwarden — search your bookmarks,",
     "keep them organised, and read the pages it preserved."
   ],
-  "badges": ["28 tools", "MIT", "Node ≥22"]
+  "badges": ["28 tools", "MIT"]
 }

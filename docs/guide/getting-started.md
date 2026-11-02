@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- **Node.js 22 or newer** (24 recommended — both are current LTS lines)
+- **Node.js 24 or newer** (26 recommended — both are current LTS lines)
 - **A running Linkwarden instance.** Developed and verified against **v2.16.0**.
 - **An access token**
 

@@ -66,7 +66,7 @@ release cannot land in the model's context unannounced.
 
 ## Requirements
 
-- Node.js ≥ 22
+- Node.js ≥ 24
 - A running Linkwarden instance
 - An access token, created under **Settings → Access Tokens**
 

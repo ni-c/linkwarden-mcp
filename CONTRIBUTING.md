@@ -61,7 +61,7 @@ which means a headless browser has driven over the page.
 ## Expectations
 
 - **Tests.** Behaviour changes come with a test that fails without the change. CI runs
-  lint, build and the test suite on Node 22 and 24, plus a coverage gate, `npm audit`,
+  lint, build and the test suite on Node 24 and 26, plus a coverage gate, `npm audit`,
   CodeQL and a Trivy scan of the container image on amd64 and arm64.
 - **Comments** explain constraints the code cannot show — not what the next line does.
   Linkwarden's API has several undocumented behaviours (replacement-style `PUT`
