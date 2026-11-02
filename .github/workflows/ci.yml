@@ -1,6 +1,6 @@
 # Action SHAs resolved 2026-08-17; the comment behind each pin is the tag it came
-# from. The Node matrix tracks the two current LTS lines (24 Krypton, 22 Jod) —
-# LTS, not newest: 26 exists and is not LTS.
+# from. The Node matrix tracks the two current LTS lines (26 Lithium, 24 Krypton);
+# 22 Jod was dropped on 2026-11-02.
 name: CI
 
 on:
@@ -24,8 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # The two active LTS lines: 24 (Krypton) and 22 (Jod), checked 2026-08-17.
-        node-version: [22, 24, 26]
+        # The two LTS lines: 26 (Lithium, active) and 24 (Krypton), checked 2026-11-02.
+        node-version: [24, 26]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
